@@ -4,9 +4,10 @@ import { parseArgs } from './args.js';
 import { printError, UsageError } from '../core/errors.js';
 import { loadConfig, loadEnvFile } from '../config/index.js';
 import { runHelp } from './commands/help.js';
-import { runVersion } from './commands/version.js';
+import { runVersionPage, runVersionShort } from './commands/version.js';
 import { runDoctor } from './commands/doctor.js';
-import { runShell } from './commands/shell.js';
+import { runLanding } from './commands/landing.js';
+import { runPlanned } from './commands/planned.js';
 
 /**
  * Piping CLI output into a program that closes early (e.g. `… | head`)
@@ -23,10 +24,10 @@ for (const stream of [process.stdout, process.stderr]) {
 /**
  * Unscript CLI entry point.
  *
- * Step 1 scope: argument handling, version/help, local environment
- * checks (`doctor`), and the interactive shell. Nothing connects to
- * Sanity, MCP, Gemini, or a transformation engine — those are future
- * modules and must not be implied here.
+ * The primary UX is the interactive home screen (`unscript`). Readable
+ * subcommands `help`, `version`, `doctor` work for scripting and quick
+ * access. Nothing connects to Sanity, MCP, Gemini, or a transformation
+ * engine — those are future modules and must not be implied here.
  */
 
 async function main(): Promise<number> {
@@ -40,7 +41,7 @@ async function main(): Promise<number> {
   const parseResult = parseArgs(argv);
   if ('error' in parseResult) {
     throw new UsageError(parseResult.error, {
-      hint: "Run 'unscript --help' for usage.",
+      hint: "Run 'unscript help' for usage.",
     });
   }
   const args = parseResult.parsed;
@@ -55,11 +56,13 @@ async function main(): Promise<number> {
     case 'help':
       return await runHelp();
     case 'version':
-      return await runVersion();
+      return args.viaFlag ? await runVersionShort() : await runVersionPage();
     case 'doctor':
       return await runDoctor(debug);
-    case 'shell':
-      return await runShell(debug);
+    case 'landing':
+      return await runLanding(debug);
+    case 'planned':
+      return await runPlanned(args.word ?? 'command');
   }
 }
 

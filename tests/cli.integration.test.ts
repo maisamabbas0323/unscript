@@ -52,15 +52,28 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
   it('shows help and exits 0', async () => {
     const result = await runCli(['--help']);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('Usage');
-    expect(result.stdout).toContain('doctor');
-    expect(result.stdout).toContain('--help');
+    expect(result.stdout).toContain('GETTING STARTED');
+    expect(result.stdout).toContain('unscript doctor');
+  });
+
+  it('supports the readable help subcommand', async () => {
+    const result = await runCli(['help']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('UNSCRIPT');
+    expect(result.stdout).toContain('DIAGNOSTICS');
+  });
+
+  it('shows a polished version page via subcommand', async () => {
+    const result = await runCli(['version']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Version');
+    expect(result.stdout).toContain('Foundation release');
   });
 
   it('runs doctor and exits 0 (passes or warns, never fails locally)', async () => {
     const result = await runCli(['doctor']);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('unscript doctor');
+    expect(result.stdout).toContain('DOCTOR');
     expect(result.stdout).toContain('Node.js');
   });
 
@@ -70,13 +83,20 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     expect(result.stderr).toContain("Unknown command 'frobnicate'");
   });
 
+  it('reports planned-but-unimplemented commands honestly', async () => {
+    const result = await runCli(['humanize']);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain('not implemented');
+    expect(result.stdout).toContain('later step');
+  });
+
   it('rejects an unknown option with exit code 2', async () => {
     const result = await runCli(['--bogus']);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("Unknown option '--bogus'");
   });
 
-  it('refuses the interactive shell without a TTY', async () => {
+  it('refuses the interactive home screen without a TTY', async () => {
     const result = await runCli([], '');
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('needs a terminal');
@@ -85,6 +105,21 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
   it('does not leak config values in errors', async () => {
     const result = await runCli(['--bogus'], '');
     expect(result.stderr).not.toMatch(/UNSCRIPT_DEBUG|process\.env/i);
+  });
+
+  it('honors NO_COLOR and drops ANSI codes', async () => {
+    const child = spawn(process.execPath, [BIN, 'doctor'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NO_COLOR: '1' },
+    });
+    let stdout = '';
+    child.stdout!.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    const [code] = await once(child, 'close');
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('\u001b[');
+    expect(stdout).toContain('PASS');
   });
 
   it('exits quietly when stdout is closed early (EPIPE)', async () => {

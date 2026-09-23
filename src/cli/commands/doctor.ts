@@ -1,8 +1,13 @@
 import { execFile } from 'node:child_process';
-import { blank, dim, failure, line, success, warning } from '../../core/output.js';
 import { renderCheck, EXIT_OK, EXIT_ERROR } from '../../core/errors.js';
 import { loadConfig, loadEnvFile } from '../../config/index.js';
-import { requiredNodeVersion, satisfiesMinimum } from '../../utils/package-info.js';
+import {
+  requiredNodeVersion,
+  satisfiesMinimum,
+  readPackageJson,
+} from '../../utils/package-info.js';
+import { theme } from '../ui/theme.js';
+import { pageHeader, rule } from '../ui/banner.js';
 import type { CheckResult } from '../../types/config.js';
 
 /**
@@ -114,42 +119,65 @@ function checkTerminal(): CheckResult {
     name: 'Terminal',
     detail: 'output is not a TTY',
     status: 'warn',
-    hint: 'Colors are disabled and the interactive shell is unavailable; commands still work.',
+    hint: 'Colors are disabled and the home screen is unavailable; commands still work.',
   };
 }
 
-export async function runDoctor(_debug: boolean): Promise<number> {
-  const start = Date.now();
-  const checks = await Promise.all([
+async function runChecks(): Promise<CheckResult[]> {
+  return Promise.all([
     checkNodeVersion(),
     checkNpm(),
     Promise.resolve(checkConfiguration()),
     Promise.resolve(checkTerminal()),
   ]);
+}
+
+export async function runDoctor(_debug: boolean): Promise<number> {
+  const interactive = process.stdout.isTTY === true;
+  const start = Date.now();
+
+  if (interactive) {
+    process.stdout.write(`${theme.muted('Checking your environment…')}\n`);
+  }
+
+  const checks = await runChecks();
   const elapsed = Date.now() - start;
 
-  blank();
-  line('unscript doctor — environment check');
-  blank();
-  for (const check of checks) {
-    line(renderCheck(check));
+  if (interactive) {
+    process.stdout.write('\u001b[1A\u001b[K');
   }
-  blank();
+
+  const { version } = readPackageJson();
+  const width = Math.max(40, Math.min(process.stdout.columns ?? 80, 100));
+  const lines: string[] = ['', ...pageHeader('Doctor', width), ''];
+  for (const check of checks) {
+    lines.push(renderCheck(check));
+  }
+  lines.push('', rule(Math.min(width, 80)), '');
 
   const failed = checks.some((check) => check.status === 'fail');
-  if (failed) {
-    failure('Some checks failed. Fix the items above, then re-run `unscript doctor`.');
-    blank();
-    return EXIT_ERROR;
-  }
-
   const warned = checks.some((check) => check.status === 'warn');
-  if (warned) {
-    warning('Checks passed with warnings. See the notes above.');
+  const passed = checks.filter((check) => check.status === 'pass').length;
+  const warnCount = checks.filter((check) => check.status === 'warn').length;
+  const failCount = checks.filter((check) => check.status === 'fail').length;
+
+  if (failCount === 0) {
+    const summary =
+      warnCount === 0
+        ? `${checks.length} checks passed`
+        : `${passed} passed · ${warnCount} warning${warnCount === 1 ? '' : 's'}`;
+    lines.push(`  ${theme.success('✓')} ${summary}`);
+    lines.push('');
+    lines.push(theme.bright('Foundation ready'));
+    lines.push(theme.muted(`  unscript v${version} · ${elapsed}ms real time`));
   } else {
-    success('All checks passed. The foundation is ready.');
+    const summary = `${failCount} check${failCount === 1 ? '' : 's'} failed`;
+    lines.push(`  ${theme.error('✗')} ${summary}`);
+    lines.push('');
+    lines.push(theme.warning('Fix the items above, then re-run `unscript doctor`.'));
   }
-  dim(`Checked ${checks.length} items in ${elapsed}ms.`);
-  blank();
-  return EXIT_OK;
+  lines.push('');
+
+  for (const line of lines) process.stdout.write(`${line}\n`);
+  return failed ? EXIT_ERROR : EXIT_OK;
 }

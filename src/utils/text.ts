@@ -12,6 +12,21 @@ const DEFAULT_WIDTH = 80;
 const MIN_WIDTH = 40;
 const MAX_WIDTH = 100;
 
+const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
+
+/** Visible width of a string, ignoring ANSI color codes. */
+export function visibleWidth(text: string): number {
+  return text.replace(ANSI_PATTERN, '').length;
+}
+
+/** Center a (possibly colored) line within `width`, when there is room. */
+export function centerLine(text: string, width: number): string {
+  const length = visibleWidth(text);
+  if (length >= width) return text;
+  const pad = Math.floor((width - length) / 2);
+  return `${' '.repeat(pad)}${text}`;
+}
+
 export function terminalWidth(): number {
   const columns = process.stdout.columns;
   if (!columns || columns < 1) return DEFAULT_WIDTH;

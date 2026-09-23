@@ -52,11 +52,10 @@ function paint(status: CheckStatus): string {
   }
 }
 
-/** Render one doctor check line: "✓ PASS  label  detail". */
+/** Render one doctor check row: "✓ PASS  Node.js   v22.23.2". */
 export function renderCheck(check: CheckResult): string {
-  const label = check.name.padEnd(15);
-  const statusText = check.status.toUpperCase().padEnd(5);
-  const coloredStatus = (() => {
+  const statusText = check.status.toUpperCase();
+  const status = (() => {
     switch (check.status) {
       case 'pass':
         return colors.green(statusText);
@@ -66,31 +65,43 @@ export function renderCheck(check: CheckResult): string {
         return colors.red(statusText);
     }
   })();
-  const line = `${paint(check.status)} ${coloredStatus}  ${label}${check.detail}`;
-  return check.hint ? `${line}\n${colors.dim(`    ${check.hint}`)}` : line;
+  const row = `  ${paint(check.status)} ${status.padEnd(5)}  ${check.name.padEnd(14)}${check.detail}`;
+  return check.hint ? `${row}\n  ${colors.dim(`↳ ${check.hint}`, process.stdout)}` : row;
 }
 
-/** Write an error to stderr, hiding stack traces unless debug is on. */
+/**
+ * Write an error to stderr as a designed page. Raw stack traces appear
+ * only when debug is on; the underlying message is never hidden.
+ */
 export function printError(error: unknown, debug: boolean): void {
-  const errStream = process.stderr;
-
-  if (error instanceof UnscriptError) {
-    if (debug) {
-      errStream.write(`${error.stack ?? error.message}\n`);
-      return;
-    }
-    errStream.write(`unscript: ${error.message}\n`);
-    if (error.hint) {
-      errStream.write(`${colors.dim(error.hint, errStream)}\n`);
-    }
-    return;
-  }
+  const stream = process.stderr;
+  const dim = (text: string): string => colors.dim(text, stream);
+  const bright = (text: string): string => colors.bold(text, stream);
+  const red = (text: string): string => colors.red(text, stream);
+  const cyan = (text: string): string => colors.cyan(text, stream);
 
   const message = error instanceof Error ? error.message : String(error);
-  if (debug && error instanceof Error && error.stack) {
-    errStream.write(`${error.stack}\n`);
+  const hint = error instanceof UnscriptError ? error.hint : undefined;
+  const kind = error instanceof UnscriptError ? '\n' : '\n  (unexpected)';
+
+  const header = `${red(bright('UNSCRIPT'))}${dim(' / ')}${bright('ERROR')}`;
+
+  if (debug) {
+    stream.write(`${header}${kind}\n\n`);
+    stream.write(`${error instanceof Error ? (error.stack ?? message) : message}\n`);
+    if (hint) stream.write(`${dim(`\n${hint}`)}\n`);
+    if (error instanceof UnscriptError && error.exitCode) {
+      stream.write(`${dim(`\nexit code ${error.exitCode}`)}\n`);
+    }
     return;
   }
-  errStream.write(`unscript: unexpected error: ${message}\n`);
-  errStream.write(`${colors.dim('Run unscript with --debug to see full details.', errStream)}\n`);
+
+  stream.write(`${header}${kind}\n\n`);
+  stream.write(`Something went wrong.\n\n`);
+  stream.write(`  ${message}\n`);
+  if (hint) {
+    stream.write(`\nWhat to do next:\n\n`);
+    stream.write(`  ${hint}\n`);
+  }
+  stream.write(`\n${dim(`Run ${cyan('unscript --debug')} for full details.`)}\n`);
 }

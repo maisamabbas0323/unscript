@@ -32,6 +32,8 @@ export const colors = {
   red: ansi('31', '39'),
   green: ansi('32', '39'),
   yellow: ansi('33', '39'),
+  blue: ansi('34', '39'),
+  magenta: ansi('35', '39'),
   cyan: ansi('36', '39'),
   gray: ansi('90', '39'),
 };

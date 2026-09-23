@@ -1,34 +1,79 @@
-import { blank, dim, line, prose, section } from '../../core/output.js';
-import { readPackageJson } from '../../utils/package-info.js';
+import { theme } from '../ui/theme.js';
+import { pageHeader } from '../ui/banner.js';
+import { terminalWidth } from '../../utils/text.js';
+import { wrap } from '../../utils/text.js';
 
 /**
- * `unscript --help` — a carefully designed help screen.
+ * `unscript help` (or `unscript --help`) — grouped, human help screen.
  * Unfinished integrations (Sanity, MCP, Gemini, transformation) are
- * intentionally not mentioned here.
+ * mentioned only as "later steps", never as working features.
  */
+
+function printLines(lines: string[]): void {
+  for (const line of lines) process.stdout.write(`${line}\n`);
+}
+
+/** Render one group: bright title, then "left  * right*" rows. */
+function group(title: string, rows: Array<[string, string]>): string[] {
+  const out: string[] = ['', theme.bright(title)];
+  for (const [left, right] of rows) {
+    out.push(`  ${left}  ${right}`);
+  }
+  return out;
+}
+
 export async function runHelp(): Promise<number> {
-  blank();
-  line('unscript — a terminal writing transformation agent');
-  blank();
-  prose(
-    'The foundation is ready: commands, environment checks, configuration, and an ' +
-      'interactive shell. Text transformation, Sanity, and model integration come ' +
-      'in later steps — nothing is wired up yet.',
+  const width = Math.max(40, Math.min(terminalWidth(), 100));
+
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(...pageHeader('Help', width));
+
+  lines.push(
+    ...group('GETTING STARTED', [
+      ['unscript', 'Open the Unscript home screen'],
+      ['unscript help', 'Show this help'],
+      ['unscript doctor', 'Check your environment'],
+      ['unscript version', 'Show the installed version'],
+    ]),
   );
-  section('Usage');
-  line('  unscript [command] [options]');
-  section('Commands');
-  line('  unscript                 Start the interactive shell');
-  line('  unscript doctor          Check your local environment (Node, npm, config)');
-  line('  unscript --version, -v   Print the installed version');
-  line('  unscript --help, -h      Show this help');
-  section('Options');
-  line('  --debug                  Show full error details and stack traces');
-  section('Environment');
-  line('  NO_COLOR                 Disable colored output');
-  line('  UNSCRIPT_DEBUG           Enable debug output (same as --debug)');
-  blank();
-  dim('Run `unscript doctor` first if anything looks wrong.');
-  blank();
+
+  lines.push(
+    ...group('HOME SCREEN', [
+      ['↑  ↓', 'Move between choices'],
+      ['Enter', 'Select a choice'],
+      ['Esc', 'Exit the home screen'],
+      ['Ctrl+C', 'Interrupt and exit'],
+    ]),
+  );
+
+  lines.push(
+    ...group('ENVIRONMENT', [
+      ['NO_COLOR', 'Disable terminal colors'],
+      ['UNSCRIPT_DEBUG', 'Enable debug details (true/false/1/0)'],
+      ['-h, -v, --debug', 'Flag aliases still work'],
+    ]),
+  );
+
+  lines.push(
+    ...group('DIAGNOSTICS', [
+      ['unscript doctor', 'Checks Node.js, npm, configuration, terminal'],
+      ['--debug', 'Show stack traces and full error details'],
+    ]),
+  );
+
+  lines.push('');
+  lines.push(
+    theme.muted(
+      wrap(
+        'Step 1 foundation: commands, environment checks, and the interactive UI work. ' +
+          'Text transformation, Sanity, and model integration arrive in later steps.',
+        width,
+      ),
+    ),
+  );
+  lines.push('');
+
+  printLines(lines);
   return 0;
 }
