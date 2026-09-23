@@ -61,13 +61,23 @@ skip or fail integration coverage.
 - **Node >= 20 emits `keypress` events on the input stream, not on the readline
   interface.** Listen on `process.stdin.on('keypress', (str, key) => …)`, not
   `rl.on('keypress', …)`, after creating the interface with `terminal: true`.
+- **Full-screen app, not a scrolling frame**: the screen is cleared
+  (`\x1b[2J\x1b[3J\x1b[H`) once at startup with the colorful wordmark pinned to
+  the top-left (3 blank lines above, 2-column indent). `promptSelect` paints
+  its static `top` block exactly once and only redraws the choice region below
+  it — the logo must never duplicate or re-render on arrow keys.
+- Moving into a page (humanize/doctor/help/version) clears the screen again and
+  renders that page alone — no logo, no leftover menu, no stacked content.
+  Exiting clears once more and prints `Bye.` / `Interrupted.`.
 - Interactive frames must never exceed the real terminal width: measure
   `process.stdout.columns` directly (`frameWidth`), not the clamped
   `terminalWidth()`. Every rendered line is bounded so redraw cursor math
   (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals.
-- Semantic colors via `ui/theme.ts`; status is never color-only (PASS/WARN/FAIL
-  text labels stay). No fake progress, spinners, or animations; doctor shows
-  real elapsed milliseconds.
+- Semantic colors via `ui/theme.ts`; the wordmark uses a letter-by-letter color
+  cycle (`colors.cyan/blue/magenta/red/yellow/green`) that auto-disables with
+  NO_COLOR. Status is never color-only (PASS/WARN/FAIL text labels stay). No
+  fake progress, spinners, or animations; doctor shows real elapsed
+  milliseconds.
 
 ## ESM / TypeScript gotchas
 

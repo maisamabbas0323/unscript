@@ -168,6 +168,42 @@ Node >= 20 emits readline `keypress` events on the **input stream**
 never. Both interactive prompts listen on `process.stdin.on('keypress', …)`.
 (Also: `TIOCSWINSZ` needs `struct.pack('HHHH', …)`, 8 bytes, in pty harnesses.)
 
+## UI/UX refinement (Step 1.6) — full-screen, colorful, pinned logo
+
+Polish pass on the home screen's first impression and navigation feel. **No new
+dependencies**, same constraints.
+
+### What changed
+
+- **Colorful wordmark** (`ui/banner.ts`): each letter of `UNSCRIPT` scrolls
+  through a cyan → blue → magenta → red → yellow → green cycle (single line of
+  `buildRows()`), auto-disabling under `NO_COLOR`/non-TTY while keeping the
+  exact 55-col block layout.
+- **Full-screen clear**: `ui/terminal.ts` gains `clearScreen()`
+  (`\x1b[2J\x1b[3J\x1b[H`). The landing clears the terminal once, pins the logo
+  to the top-left (**3 blank lines above, 2-column left indent** via
+  `introBlock(width, { top: 3, left: 2 })`), and `promptSelect` now paints the
+  static `top` block **once** — only the choice region redraws on ↑ ↓, so the
+  logo never duplicates or scrolls.
+- **Clean page navigation**: selecting a category (humanize/doctor/help/version)
+  clears the screen again and renders that page alone — no logo, no leftover
+  menu. Esc/Ctrl+C also clear before printing `Bye.`/`Interrupted.`. Exit codes
+  unchanged (0, 130).
+
+### Verified (all actually run)
+
+| Check                        | Result                                        |
+| ---------------------------- | --------------------------------------------- |
+| `npm run typecheck`          | pass                                          |
+| `npm run build`              | pass                                          |
+| `npm test`                   | 46/46 pass (6 files)                          |
+| pty 80-col home              | logo top-left, 3-line top / 2-col left margin |
+| pty 30-col home              | compact `UNSCRIPT`, no overflow, redraw ok    |
+| pty: arrows/Enter            | region redraws only; logo stays put           |
+| pty: select→doctor/help→back | screen cleared, page alone, return to menu    |
+| pty: Ctrl+C (home & page)    | "Interrupted.", exit 130                      |
+| pty: Esc                     | "Bye.", exit 0                                |
+
 ### Dependencies added
 
 None. Rationale: readline raw mode + a ~40-line key mapping (↑/↓, Enter, Esc,

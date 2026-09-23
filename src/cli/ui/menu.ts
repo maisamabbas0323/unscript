@@ -1,13 +1,15 @@
 import { createInterface, type Key } from 'node:readline';
 import { theme, sym } from './theme.js';
-import { fitFrame, hideCursor, showCursor, clearFrame, keyHint } from './terminal.js';
+import { fitFrame, hideCursor, showCursor, clearFrame, clearScreen, keyHint } from './terminal.js';
 
 /**
  * Interactive menu built on node:readline's raw-mode keypress events.
  *
- * Keys handled: ↑ ↓ to move, Enter to select, Esc to exit the menu,
- * Ctrl+C to interrupt. Rendering is frame-based: every rendered line
- * stays inside the terminal width, so redraws are reliable at any size.
+ * The screen is cleared once at start, then the `top` block (wordmark,
+ * tagline, status) is painted exactly once and stays pinned top-left.
+ * Only the choice region below it is redrawn on ↑ ↓, so the logo never
+ * duplicates or scrolls. Every rendered line stays inside the terminal
+ * width, so redraw math is reliable at any size.
  */
 
 export interface Choice<T extends string> {
@@ -25,11 +27,11 @@ interface Interrupt {
 }
 
 /**
- * Show an interactive menu. `header` renders the static frame above
- * the choice list and is re-invoked on every redraw.
+ * Show an interactive menu: a static top block painted once at the
+ * top-left of a cleared screen, then a redrawn choice region below.
  */
 export function promptSelect<T extends string>(
-  header: () => string[],
+  top: () => string[],
   choices: Choice<T>[],
 ): Promise<SelectResult<T>> {
   return new Promise((resolve) => {
@@ -38,7 +40,7 @@ export function promptSelect<T extends string>(
     let finished = false;
     let drawn = 0;
 
-    const frame = (): string[] => {
+    const region = (): string[] => {
       const items = choices.map((choice, index) => {
         const active = index === selected;
         const label = active
@@ -48,7 +50,6 @@ export function promptSelect<T extends string>(
         return `${label}${note}`;
       });
       return fitFrame([
-        ...header(),
         '',
         ...items,
         '',
@@ -61,14 +62,14 @@ export function promptSelect<T extends string>(
       ]);
     };
 
-    const paint = (lines: string[]): void => {
+    const paintRegion = (lines: string[]): void => {
       process.stdout.write(`${lines.join('\n')}\n`);
       drawn = lines.length;
     };
 
     const redraw = (): void => {
       clearFrame(drawn);
-      paint(frame());
+      paintRegion(region());
     };
 
     const finish = (): void => {
@@ -97,8 +98,6 @@ export function promptSelect<T extends string>(
     });
 
     rl.on('SIGINT', () => {
-      process.stdout.write('\n');
-      process.stdout.write(`${theme.muted('Interrupted.')}\n`);
       finish();
       resolve({ kind: 'exit', interrupted: true });
     });
@@ -108,7 +107,10 @@ export function promptSelect<T extends string>(
     });
 
     hideCursor();
-    paint(frame());
+    clearScreen();
+    const topLines = fitFrame(top());
+    process.stdout.write(`${topLines.join('\n')}\n`);
+    paintRegion(region());
   });
 }
 
@@ -136,8 +138,6 @@ export function promptAnyKey(label = 'Press Enter or Esc to return'): Promise<In
     });
 
     rl.on('SIGINT', () => {
-      process.stdout.write(`\u001b[1A\u001b[K`);
-      process.stdout.write(`${theme.muted('Interrupted.')}\n`);
       finish();
       resolve({ interrupted: true });
     });

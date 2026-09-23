@@ -1,6 +1,6 @@
 import { theme } from '../ui/theme.js';
 import { introBlock } from '../ui/banner.js';
-import { frameWidth } from '../ui/terminal.js';
+import { frameWidth, clearScreen } from '../ui/terminal.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { OperationalError, EXIT_OK, EXIT_INTERRUPTED } from '../../core/errors.js';
 import { readPackageJson } from '../../utils/package-info.js';
@@ -11,9 +11,11 @@ import { runDoctor } from './doctor.js';
 /**
  * `unscript` — the interactive home screen.
  *
- * A polished landing: wordmark, tagline, current version, a truthful
- * status, and a keyboard-navigated menu. Text transformation is listed
- * as a later step and never as working functionality.
+ * The terminal is cleared first, then the colorful wordmark is pinned to
+ * the top-left corner (3-line top margin, 2-column left margin) and
+ * stays put while the menu redraws around it. Selecting a category clears
+ * the terminal again and shows that page on its own — the logo is never
+ * duplicated below earlier content.
  */
 
 type LandingChoice = 'humanize' | 'doctor' | 'help' | 'version' | 'exit';
@@ -26,16 +28,17 @@ const CHOICES: Choice<LandingChoice>[] = [
   { id: 'exit', label: 'Exit' },
 ];
 
-/** Static frame above the menu: logo, tagline, version, status. */
-function landingHeader(): string[] {
+/** Static top of the home screen: logo pinned top-left, then status, then prompt. */
+function landingTop(): string[] {
   const width = frameWidth();
   const { version } = readPackageJson();
+  const intro = introBlock(width, { top: 3, left: 2 });
   return [
-    ...introBlock(width),
+    ...intro,
     '',
-    `${theme.success('Foundation ready')}${theme.muted(` · v${version} · foundation`)}`,
+    `  ${theme.success('Foundation ready')}${theme.muted(` · v${version} · foundation`)}`,
     '',
-    theme.bright('What would you like to do?'),
+    '  ' + theme.bright('What would you like to do?'),
   ];
 }
 
@@ -63,39 +66,41 @@ export async function runLanding(_debug: boolean): Promise<number> {
   }
 
   for (;;) {
-    const result = await promptSelect(landingHeader, CHOICES);
+    const result = await promptSelect(landingTop, CHOICES);
 
     if (result.kind === 'exit') {
+      clearScreen();
       if (result.interrupted) {
-        process.stdout.write('\n');
+        process.stdout.write(`${theme.muted('Interrupted.')}\n`);
         return EXIT_INTERRUPTED;
       }
-      process.stdout.write('\n');
       process.stdout.write(`${theme.muted('Bye.')}\n`);
       return EXIT_OK;
     }
 
+    clearScreen();
     switch (result.id) {
       case 'humanize':
         humanizePage();
-        await promptAnyKey();
         break;
       case 'doctor':
         await runDoctor(_debug);
-        await promptAnyKey();
         break;
       case 'help':
         await runHelp();
-        await promptAnyKey();
         break;
       case 'version':
         await runVersionPage();
-        await promptAnyKey();
         break;
       case 'exit':
-        process.stdout.write('\n');
         process.stdout.write(`${theme.muted('Bye.')}\n`);
         return EXIT_OK;
+    }
+
+    if ((await promptAnyKey()).interrupted) {
+      clearScreen();
+      process.stdout.write(`${theme.muted('Interrupted.')}\n`);
+      return EXIT_INTERRUPTED;
     }
   }
 }

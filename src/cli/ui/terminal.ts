@@ -26,6 +26,11 @@ export function showCursor(): void {
   process.stdout.write('\u001b[?25h');
 }
 
+/** Erase the whole screen (and scrollback) and move the cursor home. */
+export function clearScreen(): void {
+  process.stdout.write('\u001b[2J\u001b[3J\u001b[H');
+}
+
 /** Move the cursor up `lines` and clear everything below the frame. */
 export function clearFrame(lines: number): void {
   process.stdout.write(`\u001b[${lines}A\u001b[J`);
