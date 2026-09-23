@@ -1,0 +1,43 @@
+{
+  "name": "unscript",
+  "version": "0.1.0",
+  "description": "Terminal-based writing transformation agent — foundation (Step 1).",
+  "keywords": [
+    "cli",
+    "writing",
+    "transformation"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "unscript": "dist/cli/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "dev:doctor": "tsx src/cli/index.ts doctor",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/cli/index.js",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "prettier": "^3.9.8",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}
