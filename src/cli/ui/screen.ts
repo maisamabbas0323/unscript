@@ -1,0 +1,113 @@
+import { theme, sym } from './theme.js';
+import { visibleWidth, cellWidth } from '../../utils/text.js';
+
+/**
+ * Stable terminal rendering model shared by every interactive screen.
+ *
+ * Each screen owns a contiguous region on the (already cleared) display:
+ *
+ *   - a static header is painted exactly once at the top-left,
+ *   - everything below it is the interactive region. On every state
+ *     change the whole region is re-painted as a *projection of the
+ *     current state*: move to the region top (absolute), erase to the
+ *     end of the screen, print the fresh rows, place the cursor
+ *     (absolute). Because the region is erased before each paint, no
+ *     stale line can survive — "previous states" never accumulate.
+ *
+ * All row/column addressing is absolute (1-based rows), so redraw math
+ * never depends on how many lines we printed before.
+ */
+
+/** Real terminal width in cells (never a clamped approximation). */
+export function realWidth(): number {
+  const columns = process.stdout.columns;
+  return columns && columns > 0 ? Math.max(8, columns) : 80;
+}
+
+/** Real terminal height in rows. */
+export function realHeight(): number {
+  const rows = process.stdout.rows;
+  return rows && rows > 0 ? rows : 24;
+}
+
+/** Move the cursor to an absolute 1-based row/column. */
+export function cursorAt(row: number, col: number): string {
+  return `\u001b[${row};${col}H`;
+}
+
+/** Erase from the cursor to the end of the screen. */
+export function eraseBelow(): string {
+  return '\u001b[J';
+}
+
+/**
+ * Paint a screen region. `top` is the 1-based row where the region
+ * starts; `rows` are printed in order; an optional cursor position
+ * (region-relative, 0-based) is restored afterwards.
+ */
+export function renderRegion(
+  top: number,
+  rows: string[],
+  cursor?: { row: number; col: number },
+): void {
+  let out = `${cursorAt(top, 1)}${eraseBelow()}`;
+  if (rows.length > 0) out += `${rows.join('\n')}\n`;
+  if (cursor !== undefined && rows.length > 0) {
+    out += cursorAt(top + cursor.row + 1, cursor.col + 1);
+  }
+  process.stdout.write(out);
+}
+
+/** Erase a region without repainting it (screen transition cleanup). */
+export function clearRegion(top: number): void {
+  process.stdout.write(`${cursorAt(top, 1)}${eraseBelow()}`);
+}
+
+/** Bound a line to a width in cells (graceful ellipsis, no terminal wrap). */
+export function fitWidth(line: string, width: number): string {
+  const cells = cellWidth(line);
+  if (cells <= width) return line;
+  if (width < 2) return width === 1 ? '…' : '';
+  let used = 0;
+  let out = '';
+  for (const char of line) {
+    const c = cellWidth(char);
+    if (used + c > width - 1) break;
+    out += char;
+    used += c;
+  }
+  return `${out}…`;
+}
+
+/** Small uppercase status tag, right-padded to align descriptions. */
+export function statusTag(tag: string, width = 10): string {
+  return theme.muted(tag.toUpperCase().padEnd(width));
+}
+
+/** Muted keyboard hint line, packed from atomic groups, wrapped softly. */
+export function hintsHtml(groups: string[][], width: number): string[] {
+  const lines: string[] = [];
+  let current = '';
+  const join = '   ';
+  for (const group of groups) {
+    const chunk = group.join(' · ');
+    if (current === '') {
+      current = chunk;
+    } else if (visibleWidth(current) + join.length + visibleWidth(chunk) > width) {
+      lines.push(current);
+      current = chunk;
+    } else {
+      current = `${current}${join}${chunk}`;
+    }
+  }
+  if (current !== '') lines.push(current);
+  return lines;
+}
+
+/** Bottom rule with a small uppercase stage tag (INPUT, CONTENT, …). */
+export function tagRule(width: number, tag: string): string {
+  const tagText = theme.muted(tag.toUpperCase());
+  const ruleCells = Math.max(4, width - cellWidth(tagText) - 3);
+  const line = `${theme.muted(sym.rule.repeat(Math.min(ruleCells, 80)))}  ${tagText}`;
+  return fitWidth(line, width);
+}

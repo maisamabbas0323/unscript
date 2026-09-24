@@ -15,7 +15,7 @@ async function printPage(): Promise<number> {
   const { version } = readPackageJson();
   const lines = ['', ...pageHeader('Version'), '', `Version ${theme.bright(version)}`, ''];
   for (const line of lines) process.stdout.write(`${line}\n`);
-  process.stdout.write(`${theme.muted('Foundation release — Step 1 build.')}\n`);
+  process.stdout.write(`${theme.muted('Runtime release — knowledge + transformation build.')}\n`);
   process.stdout.write('\n');
   return 0;
 }

@@ -5,8 +5,10 @@ import { wrap } from '../../utils/text.js';
 
 /**
  * `unscript help` (or `unscript --help`) — grouped, human help screen.
- * Unfinished integrations (Sanity, MCP, Gemini, transformation) are
- * mentioned only as "later steps", never as working features.
+ *
+ * The runtime connects to real services (Sanity Context MCP, Gemini);
+ * help stays factual about what is implemented and what requires
+ * configuration.
  */
 
 function printLines(lines: string[]): void {
@@ -32,8 +34,10 @@ export async function runHelp(): Promise<number> {
   lines.push(
     ...group('GETTING STARTED', [
       ['unscript', 'Open the Unscript home screen'],
-      ['unscript help', 'Show this help'],
+      ['unscript humanize', 'Transform text (interactive flow)'],
+      ['unscript knowledge', 'Inspect retrieved Sanity knowledge'],
       ['unscript doctor', 'Check your environment'],
+      ['unscript help', 'Show this help'],
       ['unscript version', 'Show the installed version'],
     ]),
   );
@@ -51,13 +55,16 @@ export async function runHelp(): Promise<number> {
     ...group('ENVIRONMENT', [
       ['NO_COLOR', 'Disable terminal colors'],
       ['UNSCRIPT_DEBUG', 'Enable debug details (true/false/1/0)'],
+      ['SANITY_CONTEXT_MCP_URL', 'Hosted Context MCP endpoint URL'],
+      ['SANITY_ORGANIZATION_TOKEN', 'Organization API token (Context Viewer)'],
+      ['GEMINI_API_KEY', 'Google AI Studio API key'],
       ['-h, -v, --debug', 'Flag aliases still work'],
     ]),
   );
 
   lines.push(
     ...group('DIAGNOSTICS', [
-      ['unscript doctor', 'Checks Node.js, npm, configuration, terminal'],
+      ['unscript doctor', 'Checks Node.js, npm, configuration, services'],
       ['--debug', 'Show stack traces and full error details'],
     ]),
   );
@@ -66,8 +73,9 @@ export async function runHelp(): Promise<number> {
   lines.push(
     theme.muted(
       wrap(
-        'Step 1 foundation: commands, environment checks, and the interactive UI work. ' +
-          'Text transformation, Sanity, and model integration arrive in later steps.',
+        'The runtime transforms text with Gemini using writing rules retrieved from Sanity ' +
+          'through a hosted Context MCP. Copy `.env.example` to `.env` and set the three runtime ' +
+          'variables; `unscript doctor` reports exactly what is configured.',
         width,
       ),
     ),

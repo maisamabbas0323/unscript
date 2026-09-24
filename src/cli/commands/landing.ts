@@ -7,6 +7,7 @@ import { readPackageJson } from '../../utils/package-info.js';
 import { runHelp } from './help.js';
 import { runVersionPage } from './version.js';
 import { runDoctor } from './doctor.js';
+import { runTransform, runKnowledge } from './transform.js';
 
 /**
  * `unscript` — the interactive home screen.
@@ -18,10 +19,11 @@ import { runDoctor } from './doctor.js';
  * duplicated below earlier content.
  */
 
-type LandingChoice = 'humanize' | 'doctor' | 'help' | 'version' | 'exit';
+type LandingChoice = 'humanize' | 'knowledge' | 'doctor' | 'help' | 'version' | 'exit';
 
 const CHOICES: Choice<LandingChoice>[] = [
-  { id: 'humanize', label: 'Humanize text', note: 'later step' },
+  { id: 'humanize', label: 'Humanize text' },
+  { id: 'knowledge', label: 'Inspect knowledge' },
   { id: 'doctor', label: 'Inspect environment' },
   { id: 'help', label: 'Help' },
   { id: 'version', label: 'Version' },
@@ -36,29 +38,13 @@ function landingTop(): string[] {
   return [
     ...intro,
     '',
-    `  ${theme.success('Foundation ready')}${theme.muted(` · v${version} · foundation`)}`,
+    `  ${theme.success('Runtime ready')}${theme.muted(` · v${version}`)}`,
     '',
     '  ' + theme.bright('What would you like to do?'),
   ];
 }
 
-function printPage(lines: string[]): void {
-  for (const line of lines) process.stdout.write(`${line}\n`);
-}
-
-function humanizePage(): void {
-  printPage([
-    '',
-    '',
-    theme.bright('Humanize text'),
-    '',
-    theme.muted('Text transformation isn’t available in this build.'),
-    theme.muted('It arrives in a later step, together with Sanity and model integration.'),
-    '',
-  ]);
-}
-
-export async function runLanding(_debug: boolean): Promise<number> {
+export async function runLanding(debug: boolean): Promise<number> {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     throw new OperationalError('the interactive home screen needs a terminal', {
       hint: 'Run `unscript doctor`, `unscript help`, `unscript version`, or pipe output instead.',
@@ -81,10 +67,13 @@ export async function runLanding(_debug: boolean): Promise<number> {
     clearScreen();
     switch (result.id) {
       case 'humanize':
-        humanizePage();
+        await runTransform(debug);
+        break;
+      case 'knowledge':
+        await runKnowledge(debug);
         break;
       case 'doctor':
-        await runDoctor(_debug);
+        await runDoctor(debug);
         break;
       case 'help':
         await runHelp();

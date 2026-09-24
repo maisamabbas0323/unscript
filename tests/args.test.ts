@@ -18,6 +18,18 @@ describe('parseArgs', () => {
     expect(parseArgs(['version'])).toEqual({
       parsed: { command: 'version', debug: false, viaFlag: false },
     });
+    expect(parseArgs(['knowledge'])).toEqual({
+      parsed: { command: 'knowledge', debug: false, viaFlag: false },
+    });
+  });
+
+  it('maps humanize to the transform command', () => {
+    expect(parseArgs(['humanize'])).toEqual({
+      parsed: { command: 'transform', debug: false, viaFlag: false },
+    });
+    expect(parseArgs(['transform'])).toEqual({
+      parsed: { command: 'transform', debug: false, viaFlag: false },
+    });
   });
 
   it('parses help/version flags with viaFlag set', () => {
@@ -51,7 +63,7 @@ describe('parseArgs', () => {
   });
 
   it('recognizes planned future commands', () => {
-    for (const word of ['humanize', 'file', 'config']) {
+    for (const word of ['file', 'config']) {
       expect(parseArgs([word])).toEqual({
         parsed: { command: 'planned', debug: false, viaFlag: false, word },
       });

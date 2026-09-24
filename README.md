@@ -1,38 +1,39 @@
 # Unscript
 
-A terminal-based writing transformation agent. **This is the Step 1 foundation only.**
+A terminal-based writing transformation agent. The runtime (Step 5) is
+implemented: a TypeScript CLI that retrieves writing rules from a Sanity
+Knowledge Base through a hosted **Sanity Context MCP**, transforms text with
+**Gemini**, and validates the result deterministically before showing it.
 
-Unscript's final architecture will be a CLI that drives an agent over Sanity
-content through MCP, transforms writing with a language model, validates the
-result, and prints polished output. None of that exists yet.
+## Status
 
-## Step 1 scope
+- `unscript humanize` — real interactive transformation flow (input → content
+  type → tone → humanization level → transform → validate → display).
+- `unscript knowledge` — inspect exactly which Sanity knowledge documents
+  would influence a transformation.
+- `unscript doctor` — local checks plus live service checks when credentials
+  are configured (Context MCP + Gemini probes are labeled as live checks).
+- `file` and `config` remain recognized but not implemented (exit 1, honest).
 
-This repository currently contains the **production foundation**: a strict
-TypeScript, ESM CLI with a clean structure that later steps can extend with
-agent, MCP, Sanity, Gemini, transformation, and validation modules.
-
-Implemented now:
-
-- `unscript` — an interactive home screen (wordmark, version, keyboard menu)
-- `unscript doctor` — real local environment checks (Node, npm, config, terminal)
-- `unscript help` / `unscript version` — readable subcommands (flags `-h`/`-v` still work)
-- configuration layer with `.env` support
-
-**Not implemented (do not assume they work):** Gemini, Sanity, Sanity Context
-MCP, the transformation engine, and content validation. No external service is
-connected. The CLI says so instead of pretending.
+Nothing is fabricated: if `SANITY_CONTEXT_MCP_URL`, `SANITY_ORGANIZATION_TOKEN`,
+or `GEMINI_API_KEY` are missing, the transform flow fails with setup
+instructions; doctor warns without failing.
 
 ## Requirements
 
 - Node.js >= 20
 - npm
+- A Sanity project with the Unscript Knowledge Base schema populated
+  (see `unscript-knowledge/`)
+- A hosted Sanity Context MCP endpoint in **GROQ mode** for that dataset
+- A Google AI Studio API key
 
 ## Installation
 
 ```sh
 npm install
 npm run build
+cp .env.example .env   # then fill in the three runtime variables
 ```
 
 ## Development commands
@@ -45,6 +46,7 @@ npm run build
 | `npm run build`        | Compile `src/` to `dist/`                                    |
 | `npm test`             | Build, then run all tests (vitest)                           |
 | `npm run test:watch`   | Run tests in watch mode                                      |
+| `npm run lint`         | ESLint (flat config, `eslint .`)                             |
 | `npm run format`       | Format with Prettier                                         |
 | `npm run format:check` | Check formatting                                             |
 
@@ -62,56 +64,83 @@ npm link
 unscript --help
 ```
 
-### Supported commands
+### Commands
 
-| Command            | Description                                               |
-| ------------------ | --------------------------------------------------------- |
-| `unscript`         | Open the interactive home screen                          |
-| `unscript help`    | Show grouped help (also `-h` / `--help`)                  |
-| `unscript version` | Show a version page (also `-v` / `--version`)             |
-| `unscript doctor`  | Check the local environment (Node, npm, config, terminal) |
-| `unscript --debug` | Show full error details and stack traces                  |
+| Command                | Description                                              |
+| ---------------------- | -------------------------------------------------------- |
+| `unscript`             | Interactive home screen                                  |
+| `unscript humanize`    | Transform text (content type → tone → level → transform) |
+| `unscript knowledge`   | Inspect the Sanity knowledge retrieved for a request     |
+| `unscript doctor`      | Local check + live service checks when configured        |
+| `unscript help`        | Show grouped help (also `-h` / `--help`)                 |
+| `unscript version`     | Show a version page (also `-v` / `--version`)            |
+| `unscript file/config` | Recognized, not implemented (exit 1)                     |
 
 The home screen is keyboard-navigated: `↑ ↓` move, `Enter` selects, `Esc`
-exits, `Ctrl+C` interrupts. `unscript --version` prints the bare version for
-scripts; `unscript version` prints the human-facing page.
+exits, `Ctrl+C` interrupts.
 
-Future subcommands (`humanize`, `file`, `config`) are recognized but report
-"not implemented yet" with exit code `1` — the surface is stable, the features
-are not faked.
+### The transformation flow
+
+`unscript humanize` walks you through:
+
+1. **Input** — paste or type text; finish with a lone `.` on its own line.
+2. **Content type** — living list retrieved from Sanity (email, documentation,
+   article, …).
+3. **Tone** — living list of tone rules.
+4. **Humanization level** — living list (Light, Natural, Human, Deep, …).
+5. **Transform** — retrieval → Gemini (`gemini-3.1-flash-lite`) → deterministic
+   preservation validation.
+6. **Result** — original vs. reworked text, validation report, conflicts, notes,
+   real elapsed time, and knowledge provenance.
 
 Exit codes: `0` success, `1` operational error, `2` usage error,
 `130` interrupted (Ctrl+C).
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust. Current variables:
+Copy `.env.example` to `.env` and adjust. Variables:
 
-| Variable         | Meaning                                      |
-| ---------------- | -------------------------------------------- |
-| `UNSCRIPT_DEBUG` | Enable debug output (`true`/`false`/`1`/`0`) |
-| `NO_COLOR`       | Standard; disables colored output when set   |
+| Variable                    | Meaning                                           |
+| --------------------------- | ------------------------------------------------- |
+| `UNSCRIPT_DEBUG`            | Enable debug output (`true`/`false`/`1`/`0`)      |
+| `NO_COLOR`                  | Standard; disables colored output when set        |
+| `SANITY_CONTEXT_MCP_URL`    | Hosted Context MCP endpoint URL (GROQ mode)       |
+| `SANITY_ORGANIZATION_TOKEN` | Organization API token, Context Viewer permission |
+| `GEMINI_API_KEY`            | Google AI Studio API key (transformation model)   |
 
-Secrets belong in `.env` only (git-ignored). Never commit a real `.env`, and
-never hard-code credentials in source code. Future steps add Gemini, Sanity,
-and MCP configuration here.
+Secrets belong in `.env` only (git-ignored). Never commit a real `.env`, never
+hard-code credentials, and never log a token or key. Doctor displays only
+redacted labels (e.g. `abcd••••wxyz`).
 
-## Project structure
+The Context MCP endpoint is created in the Sanity Context app, not in the Sanity
+CLI. The runtime talks JSON-RPC 2.0 (streamable HTTP) to the endpoint and uses
+GROQ-mode tools: `initial_context`, `schema_explorer`, `groq_query`. When the
+endpoint serves a Knowledge Base instead, commands fail with a clear message.
+
+## Architecture
 
 ```
 src/
-  cli/
-    index.ts          entry point, dispatch
-    args.ts           strict argument parsing (subcommands + flags)
-    commands/         help, version, doctor, landing, planned
-    ui/               theme, banner, menu, terminal (rendering)
-  config/             configuration layer (.env loading + validation)
-  core/               errors, check rendering
-  utils/              color, text wrapping, package metadata
-  types/              shared types
-tests/                unit + integration tests (vitest)
+  agent/          orchestration (retrieval → context → model → validation)
+  cli/            entry, args, commands (help, version, doctor, landing,
+                  transform/humanize, knowledge, planned), ui + runtime
+  config/         .env loading + validation; runtime env (Context MCP/Gemini)
+  core/           errors, exit codes, check rendering
+  gemini/         real Gemini REST client (generateContent), typed errors
+  knowledge/      Sanity knowledge types, GROQ retrieval, priority ranking
+  mcp/            JSON-RPC/SSE MCP client + Context MCP facade
+  transformation/ prompt assembly, output validation, preservation checks
+  utils/          colors, secrets/redaction, debug logging, text wrapping
+  types/          shared types
+tests/            unit + integration tests (vitest)
 ```
 
-## License
+Sanity is the structured policy layer; Gemini is only the language engine. The
+agent never lets the model invent writing rules, never fakes retrieval, and
+never claims a source exists without a document id.
 
-MIT
+## Testing
+
+`npm test` builds first (integration tests spawn `dist/cli/index.js`). The
+MCP and Gemini clients are unit-tested with injected fake `fetch`
+implementations; live calls require the credentials above.

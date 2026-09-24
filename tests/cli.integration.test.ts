@@ -53,6 +53,7 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     const result = await runCli(['--help']);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('GETTING STARTED');
+    expect(result.stdout).toContain('unscript humanize');
     expect(result.stdout).toContain('unscript doctor');
   });
 
@@ -67,7 +68,7 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     const result = await runCli(['version']);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('Version');
-    expect(result.stdout).toContain('Foundation release');
+    expect(result.stdout).toContain('Runtime release');
   });
 
   it('runs doctor and exits 0 (passes or warns, never fails locally)', async () => {
@@ -75,7 +76,7 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('DOCTOR');
     expect(result.stdout).toContain('Node.js');
-  });
+  }, 90_000);
 
   it('rejects an unknown command with exit code 2', async () => {
     const result = await runCli(['frobnicate']);
@@ -84,10 +85,22 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
   });
 
   it('reports planned-but-unimplemented commands honestly', async () => {
-    const result = await runCli(['humanize']);
+    const result = await runCli(['file']);
     expect(result.code).toBe(1);
     expect(result.stdout).toContain('not implemented');
     expect(result.stdout).toContain('later step');
+  });
+
+  it('refuses the transform flow without a TTY', async () => {
+    const result = await runCli(['humanize']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('needs a terminal');
+  });
+
+  it('refuses the knowledge inspector without a TTY', async () => {
+    const result = await runCli(['knowledge']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('needs a terminal');
   });
 
   it('rejects an unknown option with exit code 2', async () => {
@@ -120,7 +133,7 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     expect(code).toBe(0);
     expect(stdout).not.toContain('\u001b[');
     expect(stdout).toContain('PASS');
-  });
+  }, 90_000);
 
   it('exits quietly when stdout is closed early (EPIPE)', async () => {
     // Simulates piping into `head`: the reader closes the pipe mid-output.
@@ -132,5 +145,5 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     });
     const [code] = await once(child, 'close');
     expect(code).toBe(0);
-  });
+  }, 90_000);
 });

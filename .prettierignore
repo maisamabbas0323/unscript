@@ -1,0 +1,5 @@
+# The Sanity Studio lives in its own project with its own tooling.
+unscript-knowledge/
+dist/
+coverage/
+node_modules/

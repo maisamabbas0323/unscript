@@ -8,6 +8,7 @@ import { runVersionPage, runVersionShort } from './commands/version.js';
 import { runDoctor } from './commands/doctor.js';
 import { runLanding } from './commands/landing.js';
 import { runPlanned } from './commands/planned.js';
+import { runTransform, runKnowledge } from './commands/transform.js';
 
 /**
  * Piping CLI output into a program that closes early (e.g. `… | head`)
@@ -25,9 +26,11 @@ for (const stream of [process.stdout, process.stderr]) {
  * Unscript CLI entry point.
  *
  * The primary UX is the interactive home screen (`unscript`). Readable
- * subcommands `help`, `version`, `doctor` work for scripting and quick
- * access. Nothing connects to Sanity, MCP, Gemini, or a transformation
- * engine — those are future modules and must not be implied here.
+ * subcommands `humanize` (interactive transformation), `knowledge`
+ * (knowledge inspection), `doctor`, `help`, and `version` cover the real
+ * runtime. The runtime talks to Sanity through a hosted Context MCP and
+ * to Gemini for language transformation; when either is unconfigured,
+ * those commands fail honestly with setup instructions.
  */
 
 async function main(): Promise<number> {
@@ -59,6 +62,10 @@ async function main(): Promise<number> {
       return args.viaFlag ? await runVersionShort() : await runVersionPage();
     case 'doctor':
       return await runDoctor(debug);
+    case 'transform':
+      return await runTransform(debug);
+    case 'knowledge':
+      return await runKnowledge(debug);
     case 'landing':
       return await runLanding(debug);
     case 'planned':

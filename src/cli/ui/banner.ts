@@ -80,6 +80,12 @@ export function pageHeader(title: string, width: number = terminalWidth()): stri
   return [head, rule(width)];
 }
 
+/** Interactive-screen chrome: sentence-case title under the brand + rule. */
+export function screenHeader(title: string, width: number = terminalWidth()): string[] {
+  const head = `${theme.brand('UNSCRIPT')}${theme.muted(' / ')}${theme.bright(title)}`;
+  return [head, rule(width)];
+}
+
 export interface IntroOptions {
   /** Blank lines to leave above the wordmark (top margin). */
   top?: number;

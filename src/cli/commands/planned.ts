@@ -3,9 +3,9 @@ import { pageHeader } from '../ui/banner.js';
 import { EXIT_ERROR } from '../../core/errors.js';
 
 /**
- * Forward-declared commands (`unscript humanize`, `unscript file`,
- * `unscript config`) are recognized so the CLI surface is stable, but
- * they are not implemented. Report that honestly and exit non-zero.
+ * Forward-declared commands (`unscript file`, `unscript config`) are
+ * recognized so the CLI surface is stable, but they are not implemented.
+ * Report that honestly and exit non-zero.
  */
 export async function runPlanned(word: string): Promise<number> {
   const lines = ['', ...pageHeader(`${word} — later step`)];
@@ -13,7 +13,7 @@ export async function runPlanned(word: string): Promise<number> {
   lines.push(
     theme.muted(
       'This command arrives in a later step. Run `unscript` to open the home screen, ' +
-        'or `unscript help` to see what is available today.',
+        '`unscript humanize` to transform text, or `unscript help` to see what is available today.',
     ),
     '',
   );

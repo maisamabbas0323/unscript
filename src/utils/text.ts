@@ -19,6 +19,47 @@ export function visibleWidth(text: string): number {
   return text.replace(ANSI_PATTERN, '').length;
 }
 
+const COMBINING_PATTERN = /\p{Mark}/u;
+
+/** East Asian Wide/Fullwidth and emoji code points occupy two cells. */
+function isWideCell(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+    (code >= 0x2e80 && code <= 0x303e) || // CJK radicals, punctuation
+    (code >= 0x3041 && code <= 0x33ff) || // Hiragana, Katakana, CJK symbols
+    (code >= 0x3400 && code <= 0x4dbf) || // CJK Ext A
+    (code >= 0x4e00 && code <= 0x9fff) || // CJK unified
+    (code >= 0xa000 && code <= 0xa4cf) || // Yi
+    (code >= 0xac00 && code <= 0xd7a3) || // Hangul syllables
+    (code >= 0xf900 && code <= 0xfaff) || // CJK compatibility
+    (code >= 0xfe30 && code <= 0xfe4f) || // CJK compatibility forms
+    (code >= 0xff00 && code <= 0xff60) || // Fullwidth forms
+    (code >= 0xffe0 && code <= 0xffe6) || // Fullwidth signs
+    (code >= 0x1f300 && code <= 0x1faff) || // Emoji
+    (code >= 0x20000 && code <= 0x3fffd) // CJK Ext B+
+  );
+}
+
+/**
+ * Visible terminal cell width of a (possibly ANSI-colored) string.
+ * Wide East Asian characters count as 2 cells, combining marks as 0.
+ */
+export function cellWidth(text: string): number {
+  let width = 0;
+  for (const part of text.split(ANSI_PATTERN)) {
+    for (const char of part) {
+      if (COMBINING_PATTERN.test(char)) continue;
+      width += isWideCell(char.codePointAt(0)!) ? 2 : 1;
+    }
+  }
+  return width;
+}
+
+/** Split a string into code points (surrogate-safe). */
+export function toChars(text: string): string[] {
+  return [...text];
+}
+
 /** Center a (possibly colored) line within `width`, when there is room. */
 export function centerLine(text: string, width: number): string {
   const length = visibleWidth(text);

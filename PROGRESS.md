@@ -210,3 +210,101 @@ None. Rationale: readline raw mode + a ~40-line key mapping (↑/↓, Enter, Esc
 Ctrl+C via standardized CSI sequences) covers exactly the keys the UI needs;
 adding a menu library would bring its own visual identity and non-TTY behavior
 without benefit here.
+
+## Runtime agent layer (Step 5) — knowledge + transformation
+
+### Goal
+
+Real end-to-end runtime on top of the Step 1 CLI and the 58-doc Sanity
+Knowledge Base (`b209xsoi` / `production`): retrieve writing rules through a
+hosted **Sanity Context MCP** (GROQ mode), transform text with **Gemini**
+(`gemini-3.1-flash-lite`), and validate deterministically. No mocks, no
+fabricated results, no fake integrations.
+
+### What was built
+
+- **Runtime config** (`src/config/env.ts`): `SANITY_CONTEXT_MCP_URL`,
+  `SANITY_ORGANIZATION_TOKEN`, `GEMINI_API_KEY` parsing with redacted labels,
+  `runtimeSetupMessage()` with actionable setup steps. `loadConfig` shape
+  untouched (pinned by `tests/config.test.ts`).
+- **Secrets** (`src/utils/secrets.ts`): `redactSecret`, `stripSecrets`;
+  debug logging (`src/utils/log.ts`) writes `[debug]` to stderr, never secrets.
+- **MCP client** (`src/mcp/`): JSON-RPC 2.0 / streamable-HTTP client
+  (`initialize` → `notifications/initialized` → `tools/list` → `tools/call`),
+  JSON + JSON-batch + SSE parsing, session ids, per-request timeouts, typed
+  errors (connection/auth/protocol/tool). Context MCP facade: real
+  `initial_context` tool call (mandatory before any `groq_query`, per the
+  endpoint), `groq_query`/`schema_explorer` with defensive payload parsing.
+- **Knowledge retrieval** (`src/knowledge/`): typed docs matching the Sanity
+  schemas, targeted GROQ queries (content type, level, tone, patterns, rules by
+  pattern/type, user decisions), priority sorting (higher first), dedupe by id,
+  source provenance on every item.
+- **Gemini client** (`src/gemini/`): real `generateContent` REST calls,
+  `x-goog-api-key` header, no fallback model, bounded retries for transient
+  failures only, typed errors, `ping()` for doctor.
+- **Agent** (`src/agent/`): context assembly + conflict detection from the
+  rules' own `conflictsWith` references (never invented; priority or
+  unresolved), provenance records, `runTransformation`.
+- **Transformation** (`src/transformation/`): prompt assembly from retrieved
+  knowledge, strict JSON output validation with a single safe retry, plain-text
+  fallback with a note, and deterministic preservation validation (numbers,
+  dates, URLs, identifiers, quotes, requirements, uncertainty; names are
+  heuristic warnings). Changed protected items are surfaced, never auto-fixed.
+- **CLI**: `humanize` (alias `transform`) interactive flow + `knowledge`
+  inspector, extended `doctor` (unconfigured runtime creds = WARN; live Context
+  MCP + Gemini probes when configured, now including `initial_context`),
+  landing/help/version/planned rewiring, `src/cli/ui/input.ts` multiline input
+  (readline line mode, lone `.` ends; Ctrl+D submits including a partial line —
+  `input.ts` flushes `rl.line` itself; Esc cancels; pure `reducePrompt` reducer
+  is unit-tested). Input is collected and validated **before** any service
+  call: cancel/empty input never touches Sanity or Gemini. Result page shows
+  `KNOWLEDGE APPLIED` and `SOURCES` from real retrieval provenance.
+- **ESLint** added at the root (flat config, `eslint @ ^10`,
+  `@eslint/js`, `typescript-eslint`); `npm run lint`.
+- **Docs**: `.env.example`, `README.md`, `AGENTS.md` updated; this section
+  documents honest status.
+
+### Verified in this environment
+
+| Check                      | Result                               |
+| -------------------------- | ------------------------------------ |
+| `npm run typecheck`        | pass (strict)                        |
+| `npm run lint`             | pass                                 |
+| `npm run format:check`     | pass                                 |
+| `npm run build`            | pass                                 |
+| `npm test`                 | pass (build-first integration suite) |
+| Doctor without credentials | Context MCP + Gemini WARN, exit 0    |
+
+### Verified LIVE in this environment (.env credentials present)
+
+| Check                                        | Result                                                                                                                                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx unscript doctor`                        | exit 0 · Context MCP live check `4 tool(s), initial_context + groq_query ok` · Gemini live check pass                                                                                       |
+| `npx unscript humanize` (pty, real services) | exit 0 · input → wizard selects → real retrieval (9 rules, 5-6 patterns) → Gemini `gemini-3.1-flash-lite` (finishReason STOP) → REWORKED page with real sources/URLs                        |
+| Multiline input w/ blank line (pty)          | exit 0 · blank line preserved end-to-end                                                                                                                                                    |
+| Ctrl+D mid-line submit (pty)                 | exit 0 · partial line flushed and processed                                                                                                                                                 |
+| Esc cancel / empty Ctrl+D (pty)              | exit 0 · "Cancelled." · **zero** "Connecting to the Context MCP" lines (no Sanity/Gemini contact)                                                                                           |
+| Empty-dot submit (pty)                       | exit 1 · "No text was entered." · no service contact                                                                                                                                        |
+| `npx unscript humanize` full result page     | ORIGINAL / REWORKED / KNOWLEDGE APPLIED / SOURCES (Google Technical Writing Courses, Microsoft Writing Style Guide, Plain Language Guide Series — real URLs) / VALIDATION PASS / elapsed ms |
+
+### Gotchas recorded
+
+- GROQ `[0]` projections return an object, not an array — the Context MCP
+  payload parser normalizes both.
+- The Context MCP endpoint is created in the Context app/dashboard, NOT via the
+  Sanity CLI (`sanity context` manages knowledge bases only). A KB-mode endpoint
+  exposes `knowledge_base_read` instead of `groq_query` — preflight fails with a
+  clear message naming GROQ mode.
+- **`initial_context` must run before any `groq_query`** — preflight calls it as
+  the first tool call (`initialize` → `notifications/initialized` →
+  `initial_context` → `tools/list`); `tests/runtime.test.ts` asserts the order.
+- In readline line mode, Ctrl+D on a **partial line** is swallowed (no `close`
+  event) — `input.ts` listens for the `^D` keypress (`ctrl:true, name:'d'`) and
+  flushes `rl.line` itself. Ctrl+D on an empty line closes cleanly.
+- MCP responses may arrive as JSON, a JSON batch, or SSE; the client parses all
+  three and validates the request id before accepting.
+
+### Dependency notes
+
+- Runtime dependencies: unchanged (still none added — `fetch` is built in).
+- Dev dependencies added: `eslint`, `@eslint/js`, `typescript-eslint`.

@@ -1,6 +1,7 @@
 import { createInterface, type Key } from 'node:readline';
 import { theme, sym } from './theme.js';
-import { fitFrame, hideCursor, showCursor, clearFrame, clearScreen, keyHint } from './terminal.js';
+import { fitFrame, hideCursor, showCursor, clearScreen } from './terminal.js';
+import { realWidth, renderRegion, clearRegion, fitWidth, hintsHtml } from './screen.js';
 
 /**
  * Interactive menu built on node:readline's raw-mode keypress events.
@@ -8,8 +9,9 @@ import { fitFrame, hideCursor, showCursor, clearFrame, clearScreen, keyHint } fr
  * The screen is cleared once at start, then the `top` block (wordmark,
  * tagline, status) is painted exactly once and stays pinned top-left.
  * Only the choice region below it is redrawn on ↑ ↓, so the logo never
- * duplicates or scrolls. Every rendered line stays inside the terminal
- * width, so redraw math is reliable at any size.
+ * duplicates or scrolls. Repaint is region-based (absolute cursor + erase
+ * below + full-region projection from current state), so stale fragments
+ * can never survive an arrow press or a width change.
  */
 
 export interface Choice<T extends string> {
@@ -26,10 +28,22 @@ interface Interrupt {
   interrupted: boolean;
 }
 
-/**
- * Show an interactive menu: a static top block painted once at the
- * top-left of a cleared screen, then a redrawn choice region below.
- */
+/** One choice row drawn as a rectangle-boxed item (accent when active). */
+function boxedItem(choice: Choice<string>, active: boolean, width: number): string[] {
+  const labelCell = active
+    ? `${theme.accent(`${sym.pointer} `)}${theme.bright(choice.label)}`
+    : `  ${choice.label}`;
+  const note = choice.note !== undefined ? `${theme.muted(`  ${choice.note}`)}` : '';
+  const inner = fitWidth(`${labelCell}${note}`, width - 4);
+  const border = theme.muted(active ? sym.rule : sym.rule);
+  return [
+    `${active ? theme.accent('┌') : theme.muted('┌')}${border.repeat(width - 2)}${active ? theme.accent('┐') : theme.muted('┐')}`,
+    `${active ? theme.accent('│') : theme.muted('│')} ${theme.bright(inner)} ${active ? theme.accent('│') : theme.muted('│')}`,
+    `${active ? theme.accent('└') : theme.muted('└')}${border.repeat(width - 2)}${active ? theme.accent('┘') : theme.muted('┘')}`,
+  ];
+}
+
+/** Show an interactive menu: standalone async choice over ↑ ↓ / Enter / Esc. */
 export function promptSelect<T extends string>(
   top: () => string[],
   choices: Choice<T>[],
@@ -38,38 +52,29 @@ export function promptSelect<T extends string>(
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     let selected = 0;
     let finished = false;
-    let drawn = 0;
+
+    const width = () => Math.max(20, Math.min(realWidth() - 2, 78));
 
     const region = (): string[] => {
-      const items = choices.map((choice, index) => {
-        const active = index === selected;
-        const label = active
-          ? `${theme.accent(`${sym.pointer} `)}${theme.bright(choice.label)}`
-          : `  ${choice.label}`;
-        const note = choice.note ? theme.muted(`  ${choice.note}`) : '';
-        return `${label}${note}`;
-      });
-      return fitFrame([
-        '',
-        ...items,
-        '',
-        ...keyHint([
+      const items = choices.flatMap((choice, index) =>
+        boxedItem(choice, index === selected, width()),
+      );
+      const hint = hintsHtml(
+        [
           ['↑ ↓', 'move'],
           ['Enter', 'select'],
           ['Esc', 'exit'],
           ['Ctrl+C', 'interrupt'],
-        ]),
-      ]);
+        ],
+        width(),
+      );
+      return fitWidth('', width()) === '' ? [] : ['', ...items, '', ...hint];
     };
-
-    const paintRegion = (lines: string[]): void => {
-      process.stdout.write(`${lines.join('\n')}\n`);
-      drawn = lines.length;
-    };
+    const regionTop = (): number => top().length + 1;
 
     const redraw = (): void => {
-      clearFrame(drawn);
-      paintRegion(region());
+      clearRegion(regionTop());
+      renderRegion(regionTop(), region());
     };
 
     const finish = (): void => {
@@ -97,20 +102,20 @@ export function promptSelect<T extends string>(
       }
     });
 
-    rl.on('SIGINT', () => {
+    process.stdin.on('SIGINT', () => {
       finish();
       resolve({ kind: 'exit', interrupted: true });
     });
 
-    rl.on('close', () => {
+    process.stdin.on('close', () => {
       if (!finished) resolve({ kind: 'exit', interrupted: false });
     });
 
     hideCursor();
     clearScreen();
-    const topLines = fitFrame(top());
-    process.stdout.write(`${topLines.join('\n')}\n`);
-    paintRegion(region());
+    const topLines = fitWidth('logo', width()) === '' ? [''] : top();
+    process.stdout.write(`${fitFrame(topLines).join('\n')}\n`);
+    renderRegion(regionTop(), region());
   });
 }
 
@@ -120,10 +125,9 @@ export function promptAnyKey(label = 'Press Enter or Esc to return'): Promise<In
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     let finished = false;
 
-    const hint = fitFrame([theme.muted(label)]);
-    hideCursor();
-    process.stdout.write(`${hint[0]!}\n`);
+    const topLine = (): string[] => [fitFrame([theme.muted(label)])[0]!];
 
+    const regionTop = (): number => 1;
     const finish = (): void => {
       if (finished) return;
       finished = true;
@@ -131,21 +135,25 @@ export function promptAnyKey(label = 'Press Enter or Esc to return'): Promise<In
       rl.close();
     };
 
+    hideCursor();
+    clearScreen();
+    renderRegion(regionTop(), topLine());
+
     process.stdin.on('keypress', (_str: string | undefined, _key: Key | undefined) => {
-      process.stdout.write(`\u001b[1A\u001b[K`);
+      if (finished) return;
+      clearRegion(regionTop());
       finish();
       resolve({ interrupted: false });
     });
 
-    rl.on('SIGINT', () => {
+    process.stdin.on('SIGINT', () => {
+      if (finished) return;
       finish();
       resolve({ interrupted: true });
     });
 
-    rl.on('close', () => {
+    process.stdin.on('close', () => {
       if (!finished) resolve({ interrupted: false });
     });
-
-    hideCursor();
   });
 }
