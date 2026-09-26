@@ -1,7 +1,7 @@
 import { createInterface, type Key } from 'node:readline';
 import { theme, sym } from './theme.js';
 import { fitFrame, hideCursor, showCursor, clearScreen } from './terminal.js';
-import { realWidth, renderRegion, clearRegion, fitWidth, hintsHtml } from './screen.js';
+import { realWidth, realHeight, renderRegion, clearRegion, fitWidth, hintsHtml } from './screen.js';
 
 /**
  * Interactive menu built on node:readline's raw-mode keypress events.
@@ -54,11 +54,42 @@ export function promptSelect<T extends string>(
     let finished = false;
 
     const width = () => Math.max(20, Math.min(realWidth() - 2, 78));
+    const topLines = top();
+    const regionTop = topLines.length + 1;
+
+    /** Rendered line budget below the header; never exceeds the terminal height. */
+    const visibleCount = (): number => {
+      const groups = [
+        ['↑ ↓', 'move'],
+        ['Enter', 'select'],
+        ['Esc', 'exit'],
+        ['Ctrl+C', 'interrupt'],
+      ];
+      const hintRows = hintsHtml(groups, width()).length;
+      const available = realHeight() - regionTop;
+      // Two blanks separate the boxes from hint rows. When not every choice
+      // fits, one extra "N–M of K" line is shown, so budget for it.
+      const withoutIndicator = Math.floor((available - 2 - hintRows) / 3);
+      if (withoutIndicator >= choices.length) return choices.length;
+      return Math.max(1, Math.floor((available - 2 - hintRows - 1) / 3));
+    };
+
+    /** Visible window [start, end) so the selection is always on screen. */
+    const range = (): readonly [number, number] => {
+      const visible = visibleCount();
+      const start = Math.max(
+        0,
+        Math.min(selected - Math.floor(visible / 2), choices.length - visible),
+      );
+      return [start, start + visible] as const;
+    };
 
     const region = (): string[] => {
-      const items = choices.flatMap((choice, index) =>
-        boxedItem(choice, index === selected, width()),
-      );
+      const visible = visibleCount();
+      const [start, end] = range();
+      const items = choices
+        .slice(start, end)
+        .flatMap((choice, index) => boxedItem(choice, start + index === selected, width()));
       const hint = hintsHtml(
         [
           ['↑ ↓', 'move'],
@@ -68,13 +99,15 @@ export function promptSelect<T extends string>(
         ],
         width(),
       );
-      return fitWidth('', width()) === '' ? [] : ['', ...items, '', ...hint];
+      if (visible < choices.length) {
+        hint.push(theme.muted(`  ${start + 1}–${end} of ${choices.length}`));
+      }
+      return ['', ...items, '', ...hint];
     };
-    const regionTop = (): number => top().length + 1;
 
     const redraw = (): void => {
-      clearRegion(regionTop());
-      renderRegion(regionTop(), region());
+      clearRegion(regionTop);
+      renderRegion(regionTop, region());
     };
 
     const finish = (): void => {
@@ -113,9 +146,8 @@ export function promptSelect<T extends string>(
 
     hideCursor();
     clearScreen();
-    const topLines = fitWidth('logo', width()) === '' ? [''] : top();
     process.stdout.write(`${fitFrame(topLines).join('\n')}\n`);
-    renderRegion(regionTop(), region());
+    renderRegion(regionTop, region());
   });
 }
 

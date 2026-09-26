@@ -253,12 +253,16 @@ fabricated results, no fake integrations.
 - **CLI**: `humanize` (alias `transform`) interactive flow + `knowledge`
   inspector, extended `doctor` (unconfigured runtime creds = WARN; live Context
   MCP + Gemini probes when configured, now including `initial_context`),
-  landing/help/version/planned rewiring, `src/cli/ui/input.ts` multiline input
-  (readline line mode, lone `.` ends; Ctrl+D submits including a partial line —
-  `input.ts` flushes `rl.line` itself; Esc cancels; pure `reducePrompt` reducer
-  is unit-tested). Input is collected and validated **before** any service
-  call: cancel/empty input never touches Sanity or Gemini. Result page shows
-  `KNOWLEDGE APPLIED` and `SOURCES` from real retrieval provenance.
+  landing/help/version/planned rewiring, `src/cli/ui/input.ts` multiline editor
+  (projected `EditState` + full-region repaint; lone `.` ends; **Ctrl+D
+  finishes** the whole buffer; other Ctrl chords are a no-op; Esc cancels;
+  pure `reducePrompt` reducer is unit-tested), `src/cli/ui/menu.ts`
+  rectangle-boxed choice items (┌─┐│└┘) with a height-budgeted scrolling
+  viewport, and `src/cli/ui/screen.ts` region renderer (absolute cursor +
+  erase-below, so nothing can ghost). Input is collected and validated
+  **before** any service call: cancel/empty input never touches Sanity or
+  Gemini. The result page opens with ORIGINAL | REWORKED side-by-side boxes,
+  then `KNOWLEDGE APPLIED` and `SOURCES` from real retrieval provenance.
 - **ESLint** added at the root (flat config, `eslint @ ^10`,
   `@eslint/js`, `typescript-eslint`); `npm run lint`.
 - **Docs**: `.env.example`, `README.md`, `AGENTS.md` updated; this section
@@ -277,15 +281,15 @@ fabricated results, no fake integrations.
 
 ### Verified LIVE in this environment (.env credentials present)
 
-| Check                                        | Result                                                                                                                                                                                      |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npx unscript doctor`                        | exit 0 · Context MCP live check `4 tool(s), initial_context + groq_query ok` · Gemini live check pass                                                                                       |
-| `npx unscript humanize` (pty, real services) | exit 0 · input → wizard selects → real retrieval (9 rules, 5-6 patterns) → Gemini `gemini-3.1-flash-lite` (finishReason STOP) → REWORKED page with real sources/URLs                        |
-| Multiline input w/ blank line (pty)          | exit 0 · blank line preserved end-to-end                                                                                                                                                    |
-| Ctrl+D mid-line submit (pty)                 | exit 0 · partial line flushed and processed                                                                                                                                                 |
-| Esc cancel / empty Ctrl+D (pty)              | exit 0 · "Cancelled." · **zero** "Connecting to the Context MCP" lines (no Sanity/Gemini contact)                                                                                           |
-| Empty-dot submit (pty)                       | exit 1 · "No text was entered." · no service contact                                                                                                                                        |
-| `npx unscript humanize` full result page     | ORIGINAL / REWORKED / KNOWLEDGE APPLIED / SOURCES (Google Technical Writing Courses, Microsoft Writing Style Guide, Plain Language Guide Series — real URLs) / VALIDATION PASS / elapsed ms |
+| Check                                        | Result                                                                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx unscript doctor`                        | exit 0 · Context MCP live check `4 tool(s), initial_context + groq_query ok` · Gemini live check pass                                                                                                               |
+| `npx unscript humanize` (pty, real services) | exit 0 · input → wizard selects → real retrieval (9 rules, 5-6 patterns) → Gemini `gemini-3.1-flash-lite` (finishReason STOP) → REWORKED page with real sources/URLs                                                |
+| Multiline input w/ blank line (pty)          | exit 0 · blank line preserved end-to-end                                                                                                                                                                            |
+| Ctrl+D full submit (pty)                     | exit 0 · whole buffer (incl. trailing blank lines) processed                                                                                                                                                        |
+| Esc cancel / empty Ctrl+D (pty)              | exit 0 · "Cancelled." · **zero** "Connecting to the Context MCP" lines (no Sanity/Gemini contact)                                                                                                                   |
+| Empty-dot submit (pty)                       | exit 1 · "No text was entered." · no service contact                                                                                                                                                                |
+| `npx unscript humanize` full result page     | ORIGINAL \| REWORKED side-by-side boxes, then KNOWLEDGE APPLIED / SOURCES (Google Technical Writing Courses, Microsoft Writing Style Guide, Plain Language Guide Series — real URLs) / VALIDATION PASS / elapsed ms |
 
 ### Gotchas recorded
 
@@ -298,9 +302,11 @@ fabricated results, no fake integrations.
 - **`initial_context` must run before any `groq_query`** — preflight calls it as
   the first tool call (`initialize` → `notifications/initialized` →
   `initial_context` → `tools/list`); `tests/runtime.test.ts` asserts the order.
-- In readline line mode, Ctrl+D on a **partial line** is swallowed (no `close`
-  event) — `input.ts` listens for the `^D` keypress (`ctrl:true, name:'d'`) and
-  flushes `rl.line` itself. Ctrl+D on an empty line closes cleanly.
+- Finish is **Ctrl+D**. The editor reads raw keypress events, so ^D flows
+  through as `ctrl:d` (no readline line-mode swallowing) and submits the
+  whole buffer; Ctrl+D on an empty buffer exits cleanly ("Cancelled."). Every
+  other Ctrl chord is neutralized up front so it can never type a stray
+  character. Esc cancels; a lone `.` line still terminates.
 - MCP responses may arrive as JSON, a JSON batch, or SSE; the client parses all
   three and validates the request id before accepting.
 

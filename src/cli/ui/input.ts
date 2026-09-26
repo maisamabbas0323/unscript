@@ -34,7 +34,7 @@ import { wrap } from '../../utils/text.js';
  * (unit-tested); this function feeds it the same events the old
  * line-mode collector did:
  *   - Enter on a lone `.` line → the lines above it are submitted;
- *   - Shift+Enter → the whole buffer is submitted (or a clean exit when empty);
+ *   - Ctrl+D → the whole buffer is submitted (or a clean exit when empty);
  *   - Esc → clean cancel; Ctrl+C → interrupt.
  */
 
@@ -47,7 +47,7 @@ export type PromptEvent =
   | { type: 'line'; value: string }
   /** A lone `.` line: terminate and submit. */
   | { type: 'terminator' }
-  /** Shift+Enter / stream end: submit collected content, or exit cleanly. */
+  /** Ctrl+D / stream end: submit collected content, or exit cleanly. */
   | { type: 'close' }
   /** Esc (interrupted=false) or Ctrl+C (interrupted=true): cancel. */
   | { type: 'cancel'; interrupted: boolean };
@@ -125,7 +125,7 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
       const width = realWidth();
       const source =
         text ??
-        'Write or paste the text you want to rework. A lone `.` on its own line, or Shift+Enter, finishes. Esc cancels. Blank lines inside the pasted text are kept.';
+        'Write or paste the text you want to rework. A lone `.` on its own line, or Ctrl+D, finishes. Esc cancels. Blank lines inside the pasted text are kept.';
       return wrap(source, Math.max(20, Math.min(60, width - 2)))
         .split('\n')
         .map((line) => fitWidth(theme.muted(line), width));
@@ -141,7 +141,7 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
         tagRule(width, TAG),
         ...keyHint([
           ['Enter', 'new line'],
-          ['Shift+Enter', 'finish'],
+          ['Ctrl+D', 'finish'],
           ['Esc', 'cancel'],
         ]),
       ];
@@ -193,9 +193,9 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
     const onKeypress = (str: string | undefined, key: Key | undefined): void => {
       if (finished) return;
       if (key === undefined || key.name === undefined) return;
-      if (key.shift === true && key.name === 'return') {
+      if (key.ctrl && key.name === 'd') {
         // Submit the whole buffer (trailing empty lines dropped), or
-        // exit cleanly when nothing was entered. (Finish = Shift+Enter.)
+        // exit cleanly when nothing was entered. (Finish = Ctrl+D.)
         const allEmpty = state.lines.every((line) => line === '');
         const events: PromptEvent[] = allEmpty
           ? [{ type: 'close' }]

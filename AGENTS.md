@@ -114,13 +114,13 @@ and conflicts preserved.
   `terminalWidth()`. Every rendered line is bounded so redraw cursor math
   (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (Result pages use
   `terminalWidth()` clamping like doctor/help.)
-- `promptMultiline` (text entry) uses readline **line mode** on a TTY: blank
+- `promptMultiline` (text entry) uses a projected editor on a TTY: blank
   lines inside pasted text are kept; a lone `.` on its own line finishes;
-  Ctrl+D submits (including a partial unsubmitted line — readline swallows
-  ^D there, so `input.ts` flushes `rl.line` itself); Esc cancels cleanly;
-  SIGINT interrupts. Do not collapse pasted content. The finish/cancel rule
-  lives in the pure `reducePrompt` reducer (unit-tested) with thin readline
-  wiring on top; the keypress handler is detached on finish.
+  Ctrl+D submits the whole buffer (or exits cleanly when empty); Esc cancels
+  cleanly; SIGINT interrupts. Do not collapse pasted content. The
+  finish/cancel rule lives in the pure `reducePrompt` reducer (unit-tested)
+  with thin readline wiring on top; the keypress handler is detached on
+  finish.
 - **Input happens before any service call.** `runWizard` collects and
   validates the text first, then connects to the Context MCP. Esc/cancel
   and empty/whitespace-only input never touch Sanity or Gemini and never

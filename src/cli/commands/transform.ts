@@ -247,7 +247,7 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
   const textResult = await promptMultiline({
     title: 'Humanize',
     instruction:
-      'Paste or type the text to transform, then finish with Shift+Enter or a lone `.` on its own line. Esc cancels. Blank lines inside the pasted text are kept.',
+      'Paste or type the text to transform, then finish with a lone `.` on its own line, or Ctrl+D. Esc cancels. Blank lines inside the pasted text are kept.',
   });
   if (textResult.kind === 'exit') return interruptExit(textResult.interrupted);
   const originalText = textResult.value.trim();

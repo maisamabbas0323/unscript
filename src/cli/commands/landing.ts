@@ -1,6 +1,7 @@
 import { theme } from '../ui/theme.js';
 import { introBlock } from '../ui/banner.js';
 import { frameWidth, clearScreen } from '../ui/terminal.js';
+import { realHeight } from '../ui/screen.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { OperationalError, EXIT_OK, EXIT_INTERRUPTED } from '../../core/errors.js';
 import { readPackageJson } from '../../utils/package-info.js';
@@ -30,18 +31,21 @@ const CHOICES: Choice<LandingChoice>[] = [
   { id: 'exit', label: 'Exit' },
 ];
 
-/** Static top of the home screen: logo pinned top-left, then status, then prompt. */
+/**
+ * Static top of the home screen. Tall terminals get the full pinned
+ * wordmark identity block; short terminals get a compact header so the
+ * boxed menu below always fits on screen without scrolling (which would
+ * break the absolute redraw math and hide the menu).
+ */
 function landingTop(): string[] {
   const width = frameWidth();
   const { version } = readPackageJson();
-  const intro = introBlock(width, { top: 3, left: 2 });
-  return [
-    ...intro,
-    '',
-    `  ${theme.success('Runtime ready')}${theme.muted(` · v${version}`)}`,
-    '',
-    '  ' + theme.bright('What would you like to do?'),
-  ];
+  const tall = realHeight() >= 38;
+  const status = `${theme.success('Runtime ready')}${theme.muted(` · v${version}`)}`;
+  const intro = tall ? introBlock(width, { top: 3, left: 2 }) : [`  ${theme.brand('UNSCRIPT')}`];
+  return tall
+    ? [...intro, '', `  ${status}`, '', '  ' + theme.bright('What would you like to do?')]
+    : [...intro, `  ${status}`, '  ' + theme.bright('What would you like to do?')];
 }
 
 export async function runLanding(debug: boolean): Promise<number> {
