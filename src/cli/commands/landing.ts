@@ -56,7 +56,7 @@ export async function runLanding(debug: boolean): Promise<number> {
   }
 
   for (;;) {
-    const result = await promptSelect(landingTop, CHOICES);
+    const result = await promptSelect(landingTop, CHOICES, { escLabel: 'exit' });
 
     if (result.kind === 'exit') {
       clearScreen();

@@ -144,6 +144,10 @@ export function moveEnd(state: EditState): EditState {
 /**
  * Physical viewport row (0-based) at which the buffer's first visible
  * line is rendered — the editor window scrolls with the cursor.
+ *
+ * Kept for compatibility; `layoutEditor` derives its window directly from
+ * physical row counts so that long wrapped lines can never overflow the
+ * interactive region.
  */
 export function viewportTop(state: EditState, maxView: number): number {
   if (state.lines.length <= maxView) return 0;
@@ -194,30 +198,51 @@ export interface EditorLayout {
 
 /**
  * Pure projection of the editor state onto physical terminal rows.
- * It describes only the *current* state: the renderer erases the whole
- * region and prints exactly these rows, so nothing can linger.
+ *
+ * The viewport window is sized in *physical rows* (`maxRows`), not buffer
+ * lines, so a long line that soft-wraps to several rows can never push
+ * the editor past its screen budget. The window follows the cursor's
+ * physical row, keeping the active line on screen.
+ *
+ * The renderer treats this as the only source of truth: it compares the
+ * new rows against the previous projection and repaints exactly the
+ * changed tail (see `updateRegion`), so nothing from an older edit can
+ * linger on screen.
  */
-export function layoutEditor(state: EditState, width: number, maxView: number): EditorLayout {
-  const top = viewportTop(state, maxView);
-  const end = Math.min(top + maxView, state.lines.length);
-  const rows: string[] = [];
-  let cursor = { row: 0, col: 0 };
+export function layoutEditor(state: EditState, width: number, maxRows: number): EditorLayout {
+  const prefixCells = 3;
+  const projected = state.lines.map((line, index) => {
+    const prefix = index === state.row ? ' \u0001 ' : '   ';
+    return wrapLine(line, prefix, width);
+  });
 
-  for (let i = top; i < end; i++) {
-    const active = i === state.row;
-    // Same width (3 cells) on both branches so columns stay aligned.
-    // `\u0001` marks the active line's pointer; the renderer paints it.
-    const prefix = active ? ' \u0001 ' : '   ';
-    const wrapped = wrapLine(state.lines[i]!, prefix, width);
-    const startRow = rows.length;
-    rows.push(...wrapped);
-    if (active) {
-      const lineChars = toChars(state.lines[i]!);
-      const throughCursor = lineChars.slice(0, state.col).join('');
-      const cells = cellWidth(prefix) + cellWidth(throughCursor);
-      const physRow = Math.min(startRow + Math.floor(cells / width), startRow + wrapped.length - 1);
-      cursor = { row: physRow, col: cells % width };
+  // Physical row of the cursor within the full projection.
+  let cursorGlobal = 0;
+  for (let i = 0; i < state.row; i++) cursorGlobal += projected[i]!.length;
+  const activeRows = projected[state.row]!;
+  const throughCursor = toChars(state.lines[state.row]!).slice(0, state.col).join('');
+  const cells = prefixCells + cellWidth(throughCursor);
+  const wrapRow = Math.min(activeRows.length - 1, Math.floor(cells / Math.max(1, width)));
+  cursorGlobal += wrapRow;
+
+  const totalRows = projected.reduce((sum, rows) => sum + rows.length, 0);
+  const half = Math.floor(maxRows / 2);
+  const topPhys = Math.max(0, Math.min(cursorGlobal - half, Math.max(0, totalRows - maxRows)));
+  const endPhys = Math.min(topPhys + maxRows, totalRows);
+
+  const rows: string[] = [];
+  let at = 0;
+  for (const lineRows of projected) {
+    if (at >= endPhys) break;
+    const localEnd = at + lineRows.length;
+    if (localEnd <= topPhys) {
+      at = localEnd;
+      continue;
     }
+    const from = Math.max(0, topPhys - at);
+    const to = Math.min(lineRows.length, endPhys - at);
+    rows.push(...lineRows.slice(from, to));
+    at = localEnd;
   }
-  return { rows, cursor };
+  return { rows, cursor: { row: cursorGlobal - topPhys, col: cells % width } };
 }

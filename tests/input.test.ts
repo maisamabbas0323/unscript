@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   isTerminator,
   reducePrompt,
+  submitEvents,
+  terminatorEvents,
+  enterOutcome,
+  finishOutcome,
   type PromptEvent,
   type TextOutcome,
 } from '../src/cli/ui/input.js';
+import { editingState, insertChars, newline, moveEnd, type EditState } from '../src/cli/ui/edit.js';
 
 /**
  * The input collector's finish/cancel contract, tested as pure decisions.
@@ -144,5 +149,108 @@ describe('reducePrompt — determinism', () => {
     expect(
       outcome([{ type: 'line', value: 'a' }, { type: 'terminator' }, { type: 'line', value: 'c' }]),
     ).toEqual({ kind: 'text', value: 'a' });
+  });
+});
+
+/** Build an EditState by typing and (optionally) inserting newlines. */
+function typeBuffer(segments: Array<string | '\n'>): EditState {
+  let state = editingState();
+  for (const segment of segments) {
+    if (segment === '\n') {
+      const result = newline(state);
+      if (result.kind === 'edited') state = result.state;
+    } else {
+      state = insertChars(state, segment);
+    }
+  }
+  return state;
+}
+
+describe('submitEvents — whole-buffer submit projection', () => {
+  it('projects the full document as line events plus close', () => {
+    const state = typeBuffer(['Hello one', '\n', 'Hello two']);
+    expect(submitEvents(state)).toEqual([
+      { type: 'line', value: 'Hello one' },
+      { type: 'line', value: 'Hello two' },
+      { type: 'close' },
+    ]);
+  });
+
+  it('drops one trailing empty line, like the original Ctrl+D contract', () => {
+    const state = typeBuffer(['Hello', '\n']);
+    expect(submitEvents(state).map((e) => (e.type === 'line' ? e.value : e.type))).toEqual([
+      'Hello',
+      'close',
+    ]);
+  });
+
+  it('submitting the projection reproduces the collected value', () => {
+    const state = typeBuffer(['a', '\n', 'b', '\n', '', '\n', 'c']);
+    expect(reducePrompt(submitEvents(state))).toEqual({
+      kind: 'text',
+      value: 'a\nb\n\nc',
+    });
+  });
+});
+
+describe('terminatorEvents — lone-dot projection', () => {
+  it('projects only the lines above the dot, then the terminator', () => {
+    const state = typeBuffer(['alpha', '\n', 'beta', '\n', '.']);
+    expect(terminatorEvents(state)).toEqual([
+      { type: 'line', value: 'alpha' },
+      { type: 'line', value: 'beta' },
+      { type: 'terminator' },
+    ]);
+    expect(reducePrompt(terminatorEvents(state))).toEqual({
+      kind: 'text',
+      value: 'alpha\nbeta',
+    });
+  });
+});
+
+describe('enterOutcome — Enter = Continue (pure decision)', () => {
+  it('submits the whole buffer with trailing empty lines dropped', () => {
+    const state = typeBuffer(['Please rework this', '\n', 'and keep it short.']);
+    expect(enterOutcome(state)).toEqual({
+      kind: 'text',
+      value: 'Please rework this\nand keep it short.',
+    });
+  });
+
+  it('submits an empty value when nothing was entered (caller explains)', () => {
+    expect(enterOutcome(editingState())).toEqual({ kind: 'text', value: '' });
+    expect(enterOutcome(typeBuffer(['\n', '\n']))).toEqual({ kind: 'text', value: '' });
+  });
+
+  it('a lone `.` line at the end submits the lines above it', () => {
+    const state = typeBuffer(['line one', '\n', 'line two', '\n', '.']);
+    expect(enterOutcome(state)).toEqual({ kind: 'text', value: 'line one\nline two' });
+  });
+
+  it('a `.` inside the document is plain content, not a terminator', () => {
+    // A mid-document lone dot exists once the cursor has moved above it;
+    // Enter must then submit the whole document unchanged.
+    const state: EditState = { lines: ['line one', '.', 'line three'], row: 0, col: 0 };
+    expect(enterOutcome(state)).toEqual({
+      kind: 'text',
+      value: 'line one\n.\nline three',
+    });
+  });
+});
+
+describe('finishOutcome — Ctrl+D (pure decision, unchanged contract)', () => {
+  it('submits the whole buffer, one trailing empty line dropped', () => {
+    const state = typeBuffer(['hello', '\n', 'partial', '\n']);
+    expect(finishOutcome(state)).toEqual({ kind: 'text', value: 'hello\npartial' });
+  });
+
+  it('exits cleanly when nothing was entered', () => {
+    expect(finishOutcome(editingState())).toEqual({ kind: 'exit', interrupted: false });
+  });
+
+  it('is unaffected by the cursor position (submits the whole document)', () => {
+    let state = typeBuffer(['first', '\n', 'second']);
+    state = moveEnd(state);
+    expect(finishOutcome(state)).toEqual({ kind: 'text', value: 'first\nsecond' });
   });
 });

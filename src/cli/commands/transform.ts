@@ -3,7 +3,7 @@ import { pageHeader, rule } from '../ui/banner.js';
 import { clearScreen, frameProse, frameWidth } from '../ui/terminal.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { promptMultiline } from '../ui/input.js';
-import { fitWidth } from '../ui/screen.js';
+import { fitWidth, paintLineAt } from '../ui/screen.js';
 import { OperationalError, EXIT_INTERRUPTED, EXIT_OK } from '../../core/errors.js';
 import {
   loadRuntimeConfig,
@@ -23,7 +23,6 @@ import {
 import { detectRuleConflicts } from '../../agent/context.js';
 import { wrap, terminalWidth, cellWidth } from '../../utils/text.js';
 import { debugLog } from '../../utils/log.js';
-import { GEMINI_MODEL } from '../../gemini/types.js';
 
 /**
  * `unscript humanize` — the interactive transformation flow.
@@ -132,13 +131,12 @@ function sourceLines(result: TransformationResult): string[] {
 }
 
 /**
- * Two side-by-side rectangle boxes (ORIGINAL | REWORKED).
+ * Two side-by-side boxes (ORIGINAL | REWORKED).
  *
- * Each box is drawn with the same border grammar as the interactive
- * menus (┌─┐│└┘); both boxes share one row count, so the divider stays
- * aligned and no line exceeds the terminal width. This is the whole
- * result screen: the original text and its rework — nothing ghosted
- * behind them.
+ * Both boxes share one row count so the divider stays aligned and no
+ * line exceeds the terminal width. ORIGINAL is the quiet reference
+ * (muted border); REWORKED carries the accent — the rewritten text is
+ * the result, so it is the visible emphasis.
  */
 function renderColumns(
   headers: [string, string],
@@ -147,29 +145,35 @@ function renderColumns(
 ): string[] {
   // inner content width per box: two boxes (inner+2 each) + 1-cell gap.
   const inner = Math.max(8, Math.floor((width - 5) / 2));
-  const edge = theme.accent;
+  const edgeLeft = theme.muted;
+  const edgeRight = theme.accent;
   const filler = (line: string): string => {
     const cells = cellWidth(line);
     if (cells > inner) return fitWidth(line, inner);
     return `${line}${' '.repeat(inner - cells)}`;
   };
-  const split = (text: string): string[] =>
-    wrap(text, inner) === '' ? [] : wrap(text, inner).split('\n');
+  const split = (text: string): string[] => {
+    const wrapped = wrap(text, inner);
+    return wrapped === '' ? [] : wrapped.split('\n');
+  };
   const left = split(bodies[0]);
   const right = split(bodies[1]);
   const rows = Math.max(left.length, right.length);
-  const head = (label: string): string => {
+  const head = (label: string, edge: (text: string) => string, primary: boolean): string => {
     const fill = Math.max(1, inner - 3 - cellWidth(label));
-    return `${edge('┌')}${theme.muted('─')} ${theme.bright(label)} ${theme.muted('─'.repeat(fill))}${edge('┐')}`;
+    const name = primary ? theme.bright(label) : theme.muted(label);
+    return `${edge('┌')}${theme.muted('─')} ${name} ${theme.muted('─'.repeat(fill))}${edge('┐')}`;
   };
   const row = (index: number): string =>
-    `${edge('│')}${filler(left[index] ?? '')}${edge('│')} ` +
-    `${edge('│')}${filler(right[index] ?? '')}${edge('│')}`;
+    `${edgeLeft('│')}${filler(left[index] ?? '')}${edgeLeft('│')} ` +
+    `${edgeRight('│')}${filler(right[index] ?? '')}${edgeRight('│')}`;
   const bottom =
-    `${edge('└')}${theme.muted('─'.repeat(inner))}${edge('┘')} ` +
-    `${edge('└')}${theme.muted('─'.repeat(inner))}${edge('┘')}`;
+    `${edgeLeft('└')}${theme.muted('─'.repeat(inner))}${edgeLeft('┘')} ` +
+    `${edgeRight('└')}${theme.muted('─'.repeat(inner))}${edgeRight('┘')}`;
 
-  const out: string[] = [`${head(headers[0])} ${head(headers[1])}`];
+  const out: string[] = [
+    `${head(headers[0], edgeLeft, false)} ${head(headers[1], edgeRight, true)}`,
+  ];
   for (let i = 0; i < rows; i++) out.push(row(i));
   out.push(bottom);
   return out;
@@ -181,6 +185,13 @@ function renderResult(result: TransformationResult): string[] {
 
   lines.push(
     ...renderColumns(['ORIGINAL', 'REWORKED'], [result.requestText, result.transformedText], width),
+  );
+
+  lines.push(
+    '',
+    `  ${theme.success(sym.check)} DONE  ${result.applied.ruleIds.length} rule(s) · ` +
+      `${result.applied.patternIds.length} pattern(s) · ` +
+      `${result.applied.sourceCount} source(s) · ${result.elapsedMs}ms real time`,
   );
 
   lines.push(...section('KNOWLEDGE APPLIED'));
@@ -198,7 +209,7 @@ function renderResult(result: TransformationResult): string[] {
   lines.push(...sourceLines(result));
 
   const fixes = result.preservation.changedProtectedItems;
-  lines.push(...section('VALIDATION'));
+  lines.push(...section('CHECK'));
   if (result.preservation.passed) {
     lines.push(
       `  ${theme.success(sym.check)} PASS  Preservation checks passed (${result.preservation.checked} item(s) verified)`,
@@ -231,23 +242,62 @@ function renderResult(result: TransformationResult): string[] {
 
   lines.push(
     '',
-    theme.muted(
-      `Knowledge used: ${result.applied.ruleIds.length} transformation rule(s) · ` +
-        `${result.applied.patternIds.length} pattern(s) · ` +
-        `${result.applied.sourceCount} source(s) · ${result.elapsedMs}ms real time`,
-    ),
     theme.muted('Inspect the retrieved knowledge in depth with `unscript knowledge`.'),
     '',
   );
   return lines;
 }
 
+/** Real stages of a transformation run — each maps to actual work. */
+const RUN_STAGES = [
+  'Retrieving relevant guidance',
+  'Reworking your text',
+  'Checking the result',
+] as const;
+
+function stageLine(
+  stage: string,
+  mark: 'pending' | 'active' | 'done' | 'fail',
+  detail = '',
+): string {
+  const bullet =
+    mark === 'active'
+      ? theme.accent(sym.pointer)
+      : mark === 'done'
+        ? theme.success(sym.check)
+        : mark === 'fail'
+          ? theme.error(sym.fail)
+          : theme.muted(sym.dot);
+  const suffix = detail !== '' ? theme.muted(`  ${detail}`) : '';
+  return `  ${bullet} ${stage}${suffix}`;
+}
+
+/**
+ * Compact processing screen. Every row is static and painted once; each
+ * stage line is updated in place (`paintLineAt`) as the real work
+ * completes. No spinners and no fabricated progress — elapsed time is
+ * appended only when the run finishes.
+ */
+function renderProcessingScreen(): { lines: string[]; stageRow: number; statusRow: number } {
+  const width = pageWidth();
+  const lines = [
+    ...pageHeader('Humanize', width),
+    '',
+    theme.bright('REWORKING'),
+    rule(Math.min(width, 80)),
+    '',
+  ];
+  const stageRow = lines.length + 1; // 1-based row of the first stage line
+  for (const stage of RUN_STAGES) lines.push(stageLine(stage, 'pending'));
+  lines.push('', theme.muted('This only takes a moment.'));
+  return { lines, stageRow, statusRow: stageRow + RUN_STAGES.length + 1 };
+}
+
 async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number> {
   // Input first: cancel or empty input must not touch Sanity or Gemini.
   const textResult = await promptMultiline({
     title: 'Humanize',
-    instruction:
-      'Paste or type the text to transform, then finish with a lone `.` on its own line, or Ctrl+D. Esc cancels. Blank lines inside the pasted text are kept.',
+    instruction: 'Write or paste the text you want to rework.',
   });
   if (textResult.kind === 'exit') return interruptExit(textResult.interrupted);
   const originalText = textResult.value.trim();
@@ -281,18 +331,41 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
   const level = await selectOne('level', levels);
   if ('interrupted' in level) return interruptExit(level.interrupted);
 
+  const stage = renderProcessingScreen();
   clearScreen();
-  process.stdout.write(`${theme.muted('Retrieving knowledge from Sanity…')}\n`);
-  process.stdout.write(`${theme.muted(`Transforming with ${GEMINI_MODEL}…`)}\n`);
+  process.stdout.write(`${stage.lines.join('\n')}\n`);
   const startedAt = Date.now();
-  const result = await runTransformation(connection, {
-    text: originalText,
-    contentTypeSlug: contentType.slug,
-    toneSlug: tone.slug,
-    levelSlug: level.slug,
-  });
-  process.stdout.write('\u001b[2A\u001b[J');
-  debugLog(`transformation finished in ${Date.now() - startedAt}ms`);
+  paintLineAt(stage.stageRow, stageLine(RUN_STAGES[0], 'active'));
+
+  let result: TransformationResult;
+  try {
+    result = await runTransformation(connection, {
+      text: originalText,
+      contentTypeSlug: contentType.slug,
+      toneSlug: tone.slug,
+      levelSlug: level.slug,
+    });
+  } catch (error) {
+    // Leave a clean screen for the error page — no stale stage UI above it.
+    clearScreen();
+    throw error;
+  }
+  const elapsed = Date.now() - startedAt;
+  debugLog(`transformation finished in ${elapsed}ms`);
+
+  paintLineAt(stage.stageRow, stageLine(RUN_STAGES[0], 'done'));
+  paintLineAt(stage.stageRow + 1, stageLine(RUN_STAGES[1], 'done'));
+  paintLineAt(
+    stage.stageRow + 2,
+    result.preservation.passed
+      ? stageLine(RUN_STAGES[2], 'done', `${result.preservation.checked} item(s) verified`)
+      : stageLine(
+          RUN_STAGES[2],
+          'fail',
+          `${result.preservation.changedProtectedItems.length} item(s) changed`,
+        ),
+  );
+  paintLineAt(stage.statusRow, theme.muted(`completed in ${elapsed}ms`));
 
   clearScreen();
   const lines = renderResult(result);

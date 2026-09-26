@@ -40,6 +40,51 @@ export function eraseBelow(): string {
   return '\u001b[J';
 }
 
+/** Erase from the cursor to the end of the current line. */
+export function eraseTerminalLine(): string {
+  return '\u001b[K';
+}
+
+/** Clear one whole line and write new content (absolute 1-based row). */
+export function paintLineAt(row: number, line: string): void {
+  process.stdout.write(`${cursorAt(row, 1)}${line}${eraseTerminalLine()}`);
+}
+
+/**
+ * Incremental region update: compare the previously painted rows against
+ * the new projection and repaint only the changing tail. Every line is
+ * erased to its end before writing, so a long line edited down to a short
+ * one leaves nothing behind, and a shrunken wrap count cannot linger.
+ *
+ * This replaces full-region repaints in hot paths (per keystroke in the
+ * editor, per arrow press in menus): it emits only the changed rows plus
+ * a fraction of the bytes a full erase-and-paint would, which is what
+ * keeps interactive frames from overflowing slow terminals.
+ */
+export function updateRegion(
+  top: number,
+  previous: readonly string[],
+  next: readonly string[],
+  cursor?: { row: number; col: number },
+): void {
+  let first = 0;
+  const limit = Math.min(previous.length, next.length);
+  while (first < limit && previous[first] === next[first]) first += 1;
+  const rows = Math.max(previous.length, next.length);
+  if (rows === 0) {
+    if (cursor !== undefined) process.stdout.write(cursorAt(top, cursor.col + 1));
+    return;
+  }
+  let out = '';
+  for (let i = first; i < rows; i++) {
+    out += `${cursorAt(top + i, 1)}${next[i] ?? ''}${eraseTerminalLine()}`;
+  }
+  if (cursor !== undefined) {
+    out += cursorAt(top + cursor.row, cursor.col + 1);
+  }
+  process.stdout.write(out);
+}
+
 /**
  * Paint a screen region. `top` is the 1-based row where the region
  * starts; `rows` are printed in order; an optional cursor position
@@ -53,7 +98,7 @@ export function renderRegion(
   let out = `${cursorAt(top, 1)}${eraseBelow()}`;
   if (rows.length > 0) out += `${rows.join('\n')}\n`;
   if (cursor !== undefined && rows.length > 0) {
-    out += cursorAt(top + cursor.row + 1, cursor.col + 1);
+    out += cursorAt(top + cursor.row, cursor.col + 1);
   }
   process.stdout.write(out);
 }

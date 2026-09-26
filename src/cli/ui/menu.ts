@@ -1,17 +1,30 @@
 import { createInterface, type Key } from 'node:readline';
 import { theme, sym } from './theme.js';
 import { fitFrame, hideCursor, showCursor, clearScreen } from './terminal.js';
-import { realWidth, realHeight, renderRegion, clearRegion, fitWidth, hintsHtml } from './screen.js';
+import {
+  realWidth,
+  realHeight,
+  renderRegion,
+  clearRegion,
+  updateRegion,
+  fitWidth,
+  hintsHtml,
+} from './screen.js';
 
 /**
  * Interactive menu built on node:readline's raw-mode keypress events.
  *
  * The screen is cleared once at start, then the `top` block (wordmark,
  * tagline, status) is painted exactly once and stays pinned top-left.
- * Only the choice region below it is redrawn on ↑ ↓, so the logo never
- * duplicates or scrolls. Repaint is region-based (absolute cursor + erase
- * below + full-region projection from current state), so stale fragments
- * can never survive an arrow press or a width change.
+ * Only the choice region below it is updated on ↑ ↓: each arrow press
+ * repaints just the rows that changed (see `updateRegion`), so the
+ * previous selection is erased the moment the new one is drawn — the
+ * terminal never accumulates one selection under another.
+ *
+ * Choices are single-row items with one indicator (`›` accents the
+ * active item); inactive items are aligned with the same indent so the
+ * column never jumps. When the list is taller than the screen it scrolls
+ * with an "N–M of K" position line.
  */
 
 export interface Choice<T extends string> {
@@ -28,50 +41,53 @@ interface Interrupt {
   interrupted: boolean;
 }
 
-/** One choice row drawn as a rectangle-boxed item (accent when active). */
-function boxedItem(choice: Choice<string>, active: boolean, width: number): string[] {
-  const labelCell = active
-    ? `${theme.accent(`${sym.pointer} `)}${theme.bright(choice.label)}`
-    : `  ${choice.label}`;
+export interface SelectOptions {
+  /** Esc behaviour: "back" (default) or "exit" for the home screen. */
+  escLabel?: 'back' | 'exit';
+}
+
+/** One choice row: exactly one indicator, aligned across states. */
+function itemRow(choice: Choice<string>, active: boolean, width: number): string {
+  const label = active
+    ? `${'  '}${theme.accent(sym.pointer)} ${theme.bright(choice.label)}`
+    : `${'    '}${choice.label}`;
   const note = choice.note !== undefined ? `${theme.muted(`  ${choice.note}`)}` : '';
-  const inner = fitWidth(`${labelCell}${note}`, width - 4);
-  const border = theme.muted(active ? sym.rule : sym.rule);
-  return [
-    `${active ? theme.accent('┌') : theme.muted('┌')}${border.repeat(width - 2)}${active ? theme.accent('┐') : theme.muted('┐')}`,
-    `${active ? theme.accent('│') : theme.muted('│')} ${theme.bright(inner)} ${active ? theme.accent('│') : theme.muted('│')}`,
-    `${active ? theme.accent('└') : theme.muted('└')}${border.repeat(width - 2)}${active ? theme.accent('┘') : theme.muted('┘')}`,
-  ];
+  return fitWidth(`${label}${note}`, width);
 }
 
 /** Show an interactive menu: standalone async choice over ↑ ↓ / Enter / Esc. */
 export function promptSelect<T extends string>(
   top: () => string[],
   choices: Choice<T>[],
+  options: SelectOptions = {},
 ): Promise<SelectResult<T>> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    const escLabel = options.escLabel ?? 'back';
     let selected = 0;
     let finished = false;
+    let previousRows: string[] = [];
 
     const width = () => Math.max(20, Math.min(realWidth() - 2, 78));
     const topLines = top();
     const regionTop = topLines.length + 1;
 
+    const hintGroups = (): string[][] => [
+      ['↑ ↓', 'move'],
+      ['Enter', 'select'],
+      ['Esc', escLabel],
+      ['Ctrl+C', 'interrupt'],
+    ];
+
     /** Rendered line budget below the header; never exceeds the terminal height. */
     const visibleCount = (): number => {
-      const groups = [
-        ['↑ ↓', 'move'],
-        ['Enter', 'select'],
-        ['Esc', 'exit'],
-        ['Ctrl+C', 'interrupt'],
-      ];
-      const hintRows = hintsHtml(groups, width()).length;
+      const hintRows = hintsHtml(hintGroups(), width()).length;
       const available = realHeight() - regionTop;
-      // Two blanks separate the boxes from hint rows. When not every choice
-      // fits, one extra "N–M of K" line is shown, so budget for it.
-      const withoutIndicator = Math.floor((available - 2 - hintRows) / 3);
+      // Two blanks separate the items from the hint rows. When not every
+      // choice fits, one extra "N–M of K" line is shown, so budget for it.
+      const withoutIndicator = available - 2 - hintRows;
       if (withoutIndicator >= choices.length) return choices.length;
-      return Math.max(1, Math.floor((available - 2 - hintRows - 1) / 3));
+      return Math.max(1, withoutIndicator - 1);
     };
 
     /** Visible window [start, end) so the selection is always on screen. */
@@ -89,25 +105,25 @@ export function promptSelect<T extends string>(
       const [start, end] = range();
       const items = choices
         .slice(start, end)
-        .flatMap((choice, index) => boxedItem(choice, start + index === selected, width()));
-      const hint = hintsHtml(
-        [
-          ['↑ ↓', 'move'],
-          ['Enter', 'select'],
-          ['Esc', 'exit'],
-          ['Ctrl+C', 'interrupt'],
-        ],
-        width(),
-      );
+        .map((choice, index) => itemRow(choice, start + index === selected, width()));
+      const hint = hintsHtml(hintGroups(), width());
       if (visible < choices.length) {
         hint.push(theme.muted(`  ${start + 1}–${end} of ${choices.length}`));
       }
-      return ['', ...items, '', ...hint];
+      return ['', ...items, '', ...hint.map((line) => theme.muted(line))];
     };
 
+    /** Incremental repaint: only the changed selection rows are redrawn. */
     const redraw = (): void => {
-      clearRegion(regionTop);
-      renderRegion(regionTop, region());
+      const rows = region();
+      updateRegion(regionTop, previousRows, rows);
+      previousRows = rows;
+    };
+
+    const fullPaint = (): void => {
+      const rows = region();
+      renderRegion(regionTop, rows);
+      previousRows = rows;
     };
 
     const finish = (): void => {
@@ -144,10 +160,14 @@ export function promptSelect<T extends string>(
       if (!finished) resolve({ kind: 'exit', interrupted: false });
     });
 
+    process.stdout.on('resize', () => {
+      if (!finished) fullPaint();
+    });
+
     hideCursor();
     clearScreen();
     process.stdout.write(`${fitFrame(topLines).join('\n')}\n`);
-    renderRegion(regionTop, region());
+    fullPaint();
   });
 }
 

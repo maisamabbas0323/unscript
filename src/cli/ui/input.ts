@@ -1,8 +1,17 @@
 import { emitKeypressEvents } from 'node:readline';
 import type { Key } from 'node:readline';
 import { theme, sym } from './theme.js';
-import { hideCursor, showCursor, clearScreen, keyHint } from './terminal.js';
-import { realWidth, realHeight, renderRegion, clearRegion, fitWidth, tagRule } from './screen.js';
+import { hideCursor, showCursor, clearScreen } from './terminal.js';
+import {
+  realWidth,
+  realHeight,
+  renderRegion,
+  clearRegion,
+  updateRegion,
+  fitWidth,
+  hintsHtml,
+  tagRule,
+} from './screen.js';
 import { screenHeader } from './banner.js';
 import {
   editingState,
@@ -17,6 +26,7 @@ import {
   moveHome,
   moveEnd,
   layoutEditor,
+  isTerminator,
   type EditState,
 } from './edit.js';
 import { wrap } from '../../utils/text.js';
@@ -25,17 +35,26 @@ import { wrap } from '../../utils/text.js';
  * Multiline text entry with a real state-projected editor.
  *
  * The terminal is never the source of truth: every keypress updates a
- * pure `EditState` and the whole owned region is erased and re-painted
- * from `layoutEditor(state, …)`. Because the region is fully cleared
- * before each paint, stale characters cannot survive — even when a long
- * line is edited down to a short one, or the cursor moves between lines.
+ * pure `EditState`, and the editor region is repainted from
+ * `layoutEditor(state, …)`. Repainting is incremental (`updateRegion`):
+ * only the changed rows are erased (to end of line) and redrawn, so
+ * ghosts cannot survive — whether a long line is edited down to a short
+ * one, the cursor moves between lines, or lines vanish on backspace.
  *
- * The finish/cancel contract lives in the pure `reducePrompt` reducer
- * (unit-tested); this function feeds it the same events the old
- * line-mode collector did:
- *   - Enter on a lone `.` line → the lines above it are submitted;
- *   - Ctrl+D → the whole buffer is submitted (or a clean exit when empty);
- *   - Esc → clean cancel; Ctrl+C → interrupt.
+ * Interaction contract:
+ *   - Enter (a bare Return) continues — the whole buffer is submitted.
+ *     A lone `.` line at the end still submits the lines above it.
+ *   - Ctrl+J or Alt+Enter starts a new line (multiline stays available
+ *     and is clearly sign-posted in the hints).
+ *   - Ctrl+D submits the buffer (trailing empty line dropped) or exits
+ *     cleanly when nothing was entered.
+ *   - Pasted text is wrapped in bracketed-paste markers: every byte,
+ *     including newlines, is inserted as content and only painted once.
+ *   - Esc cancels; Ctrl+C interrupts.
+ *
+ * The finish/cancel *decision* still lives in the pure `reducePrompt`
+ * reducer (unit-tested); this function feeds it the same events the
+ * editor produces, so the two paths never disagree.
  */
 
 export type TextResult = { kind: 'text'; value: string } | { kind: 'exit'; interrupted: boolean };
@@ -76,6 +95,69 @@ export function reducePrompt(events: PromptEvent[]): TextOutcome | null {
   return null;
 }
 
+/**
+ * Pure submit projection for the current buffer: the whole document as
+ * `line` events plus `close`, with one trailing empty line dropped —
+ * exactly the Ctrl+D contract (unit-tested through `submitEvents`).
+ */
+export function submitEvents(state: EditState): PromptEvent[] {
+  const lines = state.lines;
+  const end = lines.length - (lines[lines.length - 1] === '' ? 1 : 0);
+  return [
+    ...lines.slice(0, end).map((value) => ({ type: 'line' as const, value })),
+    { type: 'close' },
+  ];
+}
+
+/**
+ * Pure terminator projection: submit the lines above a lone `.` line
+ * (used when Enter lands on a terminator).
+ */
+export function terminatorEvents(state: EditState): PromptEvent[] {
+  return [
+    ...state.lines.slice(0, state.row).map((value) => ({ type: 'line' as const, value })),
+    { type: 'terminator' },
+  ];
+}
+
+/** A lone `.` is only a terminator at the end of the document. */
+function terminatorAtCursor(state: EditState): boolean {
+  return (
+    isTerminator(state.lines[state.row]!) &&
+    state.lines.slice(state.row + 1).every((line) => line === '')
+  );
+}
+
+/**
+ * Pure Enter (= Continue) decision: a lone `.` terminator line submits
+ * the lines above it; an empty document submits an empty value (so the
+ * caller can explain "No text was entered."); any other document is
+ * submitted whole, one trailing empty line dropped.
+ */
+export function enterOutcome(state: EditState): TextOutcome {
+  if (terminatorAtCursor(state)) {
+    const decided = reducePrompt(terminatorEvents(state));
+    return decided ?? { kind: 'exit', interrupted: false };
+  }
+  if (state.lines.every((line) => line === '')) {
+    return { kind: 'text', value: '' };
+  }
+  const decided = reducePrompt(submitEvents(state));
+  return decided ?? { kind: 'exit', interrupted: false };
+}
+
+/**
+ * Pure Ctrl+D decision: the whole buffer is submitted (one trailing
+ * empty line dropped), or the session exits cleanly when nothing was
+ * entered.
+ */
+export function finishOutcome(state: EditState): TextOutcome {
+  const decided = reducePrompt(
+    state.lines.every((line) => line === '') ? [{ type: 'close' }] : submitEvents(state),
+  );
+  return decided ?? { kind: 'exit', interrupted: false };
+}
+
 export interface TextPromptOptions {
   /** Screen title (sentence case), rendered as "UNSCRIPT / <title>". */
   title: string;
@@ -107,45 +189,74 @@ const TAG = 'INPUT';
 
 export function promptMultiline(options: TextPromptOptions): Promise<TextResult> {
   return new Promise((resolve) => {
-    const footerRows = 3; // blank, tag-rule, hints
-    const regionTop = (): number => {
-      const chrome =
-        screenHeader(options.title).length + wrapInstruction(options.instruction).length + 1;
-      return chrome + 1;
-    };
-    const maxView = (): number => {
-      const usable = realHeight() - regionTop() - footerRows - 1;
-      return Math.max(1, Math.min(usable, 12));
-    };
-
     let state: EditState = editingState();
     let finished = false;
+    let previousRows: string[] = [];
+    let pasting = false;
+    let pasteBuffer = '';
+
+    const hintGroups = (): string[][] => [
+      ['Enter', 'continue'],
+      ['Ctrl+J', 'new line'],
+      ['Ctrl+D', 'finish'],
+      ['Esc', 'cancel'],
+    ];
 
     const wrapInstruction = (text?: string): string[] => {
       const width = realWidth();
       const source =
-        text ??
-        'Write or paste the text you want to rework. A lone `.` on its own line, or Ctrl+D, finishes. Esc cancels. Blank lines inside the pasted text are kept.';
+        text ?? 'Write or paste the text you want to rework. New lines are added with Ctrl+J.';
       return wrap(source, Math.max(20, Math.min(60, width - 2)))
         .split('\n')
         .map((line) => fitWidth(theme.muted(line), width));
     };
 
-    const paint = (): void => {
+    const instructionRows = wrapInstruction(options.instruction);
+
+    /** 1-based row where the editor region starts. */
+    const regionTop = (): number => {
+      return screenHeader(options.title).length + instructionRows.length + 1;
+    };
+
+    /** Physical rows the editor may occupy without reaching the footer. */
+    const editorRows = (): number => {
+      const width = Math.max(20, Math.min(60, realWidth()));
+      const footerRows = 1 + 1 + hintsHtml(hintGroups(), width).length;
+      const usable = realHeight() - regionTop() - footerRows - 1;
+      return Math.max(1, Math.min(usable, 12));
+    };
+
+    const footer = (): string[] => {
       const width = realWidth();
-      const top = regionTop();
-      const layout = layoutEditor(state, width, maxView());
-      const rows = [
-        ...layout.rows.map((row) => row.replaceAll('\u0001', theme.accent(sym.pointer))),
+      return [
         '',
         tagRule(width, TAG),
-        ...keyHint([
-          ['Enter', 'new line'],
-          ['Ctrl+D', 'finish'],
-          ['Esc', 'cancel'],
-        ]),
+        ...hintsHtml(hintGroups(), width).map((line) => theme.muted(line)),
       ];
-      renderRegion(top, rows, layout.cursor);
+    };
+
+    const cursorEscape = (layout: { cursor: { row: number; col: number } }): string => {
+      return `\u001b[${regionTop() + layout.cursor.row};${layout.cursor.col + 1}H`;
+    };
+
+    /** Incremental repaint: only the changed rows are erased and redrawn. */
+    const paint = (): void => {
+      const layout = layoutEditor(state, realWidth(), editorRows());
+      const rows = layout.rows.map((row) => row.replaceAll('\u0001', theme.accent(sym.pointer)));
+      updateRegion(regionTop(), previousRows, rows, layout.cursor);
+      previousRows = rows;
+      process.stdout.write(cursorEscape(layout));
+      showCursor();
+    };
+
+    /** Full region repaint (initial paint and terminal resize). */
+    const paintFull = (): void => {
+      const layout = layoutEditor(state, realWidth(), editorRows());
+      const rows = layout.rows.map((row) => row.replaceAll('\u0001', theme.accent(sym.pointer)));
+      renderRegion(regionTop(), [...rows, ...footer()], layout.cursor);
+      previousRows = rows;
+      process.stdout.write(cursorEscape(layout));
+      showCursor();
     };
 
     const cleanup = (): void => {
@@ -156,6 +267,7 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
       process.stdout.removeListener('resize', onResize);
       process.stdin.setRawMode(false);
       process.stdin.pause();
+      process.stdout.write('\u001b[?2004l');
     };
 
     const settle = (outcome: TextOutcome): void => {
@@ -190,23 +302,42 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
       paint();
     };
 
+    /** Enter = Continue: submit the buffer, or explain an empty one. */
+    const submitViaEnter = (): void => {
+      settle(enterOutcome(state));
+    };
+
     const onKeypress = (str: string | undefined, key: Key | undefined): void => {
       if (finished) return;
       if (key === undefined || key.name === undefined) return;
+
+      // Bracketed paste: everything between the markers is content, so a
+      // pasted document keeps its blank lines and newlines verbatim.
+      if (key.name === 'paste-start') {
+        pasting = true;
+        pasteBuffer = '';
+        return;
+      }
+      if (key.name === 'paste-end') {
+        pasting = false;
+        if (pasteBuffer !== '') applyText(pasteBuffer);
+        else paint();
+        return;
+      }
+      if (pasting) {
+        if (key.name === 'return' || key.name === 'enter') {
+          pasteBuffer += '\n';
+          return;
+        }
+        const char = str ?? (key.name.length === 1 ? key.name : undefined);
+        if (char !== undefined && char !== '' && char !== '\u0001') pasteBuffer += char;
+        return;
+      }
+
       if (key.ctrl && key.name === 'd') {
-        // Submit the whole buffer (trailing empty lines dropped), or
-        // exit cleanly when nothing was entered. (Finish = Ctrl+D.)
-        const allEmpty = state.lines.every((line) => line === '');
-        const events: PromptEvent[] = allEmpty
-          ? [{ type: 'close' }]
-          : [
-              ...state.lines
-                .slice(0, state.lines.length - (state.lines[state.lines.length - 1] === '' ? 1 : 0))
-                .map((value) => ({ type: 'line' as const, value })),
-              { type: 'close' },
-            ];
-        const decided = reducePrompt(events);
-        if (decided !== null) settle(decided);
+        // Submit the whole buffer (trailing empty line dropped), or exit
+        // cleanly when nothing was entered. (Finish = Ctrl+D, unchanged.)
+        settle(finishOutcome(state));
         return;
       }
       if (key.ctrl && key.name === 'c') {
@@ -224,7 +355,14 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
           return;
         }
         case 'return':
-          applyText('\n');
+          if (key.meta) {
+            applyText('\n'); // Alt+Enter: explicit new line
+          } else {
+            submitViaEnter();
+          }
+          return;
+        case 'enter':
+          applyText('\n'); // Ctrl+J (and bare LF): explicit new line
           return;
         case 'backspace':
           state = backspace(state);
@@ -278,7 +416,7 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
     };
 
     const onResize = (): void => {
-      if (!finished) paint();
+      if (!finished) paintFull();
     };
 
     process.stdin.setRawMode(true);
@@ -291,10 +429,10 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
     hideCursor();
     clearScreen();
     const width = realWidth();
+    process.stdout.write('\u001b[?2004h'); // bracketed paste on for pasted newlines
     const chrome = screenHeader(options.title, width).map((line) => fitWidth(line, width));
     process.stdout.write(`${chrome.join('\n')}\n`);
-    const instruction = wrapInstruction(options.instruction);
-    process.stdout.write(`${instruction.join('\n')}\n\n`);
-    paint();
+    process.stdout.write(`${instructionRows.join('\n')}\n\n`);
+    paintFull();
   });
 }

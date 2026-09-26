@@ -104,23 +104,45 @@ and conflicts preserved.
   (`\x1b[2J\x1b[3J\x1b[H`) once at startup with the colorful wordmark pinned to
   the top-left (3 blank lines above, 2-column indent). `promptSelect` paints
   its static `top` block exactly once and only redraws the choice region below
-  it — the logo must never duplicate or re-render on arrow keys.
+  it — the logo must never duplicate or re-render on arrow keys. Choices are
+  restrained single-row items with exactly **one** indicator (`›` accents the
+  active item; inactive items keep the same indent so the column never jumps),
+  and `SelectOptions.escLabel` names Esc as `back` (wizard steps) or `exit`
+  (home screen).
 - Moving into a page (humanize/transform/knowledge/doctor/help/version) clears
   the screen again and renders that page alone — no logo, no leftover menu, no
   stacked content. Exiting clears once more and prints `Bye.` / `Interrupted.`
-  / `Cancelled.`.
+  / `Cancelled.`. (Cancelling from inside a page returns through the landing's
+  "Press Enter or Esc to return" gate, then the menu — same as any completed
+  page.)
 - Interactive frames must never exceed the real terminal width: measure
   `process.stdout.columns` directly (`frameWidth`), not the clamped
   `terminalWidth()`. Every rendered line is bounded so redraw cursor math
   (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (Result pages use
   `terminalWidth()` clamping like doctor/help.)
-- `promptMultiline` (text entry) uses a projected editor on a TTY: blank
-  lines inside pasted text are kept; a lone `.` on its own line finishes;
-  Ctrl+D submits the whole buffer (or exits cleanly when empty); Esc cancels
-  cleanly; SIGINT interrupts. Do not collapse pasted content. The
-  finish/cancel rule lives in the pure `reducePrompt` reducer (unit-tested)
-  with thin readline wiring on top; the keypress handler is detached on
-  finish.
+- `promptMultiline` (text entry) uses a projected editor on a TTY: the whole
+  buffer is live and the terminal is never the source of truth. **Enter =
+  Continue**: it submits the whole buffer (one trailing empty line dropped), or
+  submits the lines above a lone `.` terminator line, or submits an empty value
+  so the caller can report "No text was entered." — it never inserts a newline.
+  **Ctrl+J and Alt+Enter insert newlines** (multiline is explicit, not
+  accidental); **Ctrl+D submits the buffer** (or exits cleanly when empty);
+  **Esc cancels cleanly; SIGINT interrupts**. Bracketed-paste markers
+  (`\x1b[?2004h`, plus readline's own `paste-start`/`paste-end` events) are
+  buffered and applied once, so pasted blank lines and newlines survive
+  verbatim — nothing is collapsed. The finish/cancel _decision_ lives in the
+  pure `reducePrompt` reducer via the pure projections `submitEvents`,
+  `terminatorEvents`, `enterOutcome` and `finishOutcome` (unit-tested); the
+  keypress handler is thin wiring on top and is detached on finish.
+- **Region coordinate convention (all screens, never deviate)**: a region's
+  row _i_ is painted at absolute 1-based terminal row `top + i`, where `top` is
+  the 1-based row where the region starts. `renderRegion` (full paint),
+  `updateRegion` (diff-based incremental repaint — only the changed tail is
+  erased-to-EOL and redrawn), and the editor's cursor positioning all obey this
+  exact mapping, so incremental repaints land on the same rows the initial
+  paint used. In-place updates are what make stale selections and ghost
+  characters impossible; a one-row mismatch here silently accumulates ghost
+  rows (it was found and fixed with a pty trace harness).
 - **Input happens before any service call.** `runWizard` collects and
   validates the text first, then connects to the Context MCP. Esc/cancel
   and empty/whitespace-only input never touch Sanity or Gemini and never

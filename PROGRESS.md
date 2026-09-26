@@ -314,3 +314,108 @@ fabricated results, no fake integrations.
 
 - Runtime dependencies: unchanged (still none added — `fetch` is built in).
 - Dev dependencies added: `eslint`, `@eslint/js`, `typescript-eslint`.
+
+## UI/UX refinement (Step 5.5) — lean incremental rendering + new key contract
+
+Polish pass on the interactive flows (input editor, selection menus, result
+page) that also **fixed a real rendering bug found with a pty trace harness**.
+
+### The bug that started this round
+
+- A pty repro ("type `UNSCRIPlllllfdsjlfjsd`, backspace to `UNSCRIP`") left
+  stale characters on screen, and a full-pour flow could hang. Diagnosis had
+  two separate causes:
+  1. **Terminal buffer overflow**: the editor repainted its full region on
+     every keystroke (tens of KB per key). On a pty whose master side isn't
+     drained continuously, the synchronous `write()` blocks and the event loop
+     stalls before the Context MCP `fetch` ever runs — a hang that had no
+     timeout and looked like "selecting all options produced no result screen".
+     The fix is lean output (below); real terminals always drain, so the
+     overflow cannot occur.
+  2. **Off-by-one ghost accumulation**: `updateRegion` addressed region row _i_
+     at 1-based terminal row `top + i + 1` while `renderRegion` (the initial
+     paint) put row _i_ at `top + i`. Every incremental repaint therefore
+     landed one row lower than the original paint — menus accumulated stale
+     selections on ↑ ↓, and the editor left a ghost ` ›` row after the first
+     keystroke. Verified before/after with an ANSI byte-trace pty harness
+     (`INITIAL FRAME` vs `AFTER DOWN1/AFTER DOWN2`).
+
+### The fix
+
+- **Shared coordinate convention**: region row _i_ ⇔ absolute 1-based terminal
+  row `top + i`; region-relative cursor `{row, col}` ⇔ `(top + row, col + 1)`.
+  `renderRegion`, `updateRegion` (screen.ts) and the editor cursor escape
+  (input.ts `cursorEscape`) now all use it. Recorded in AGENTS.md so it is
+  never "fixed" inconsistently again.
+- **Lean incremental rendering**: `screen.ts` gains `updateRegion` (diff-based
+  — only the changed tail is erased-to-EOL and redrawn), `paintLineAt`
+  (single-line absolute update), `eraseTerminalLine`. Per-keystroke editor
+  output dropped to ~2.5 KB for a 33-char + 10-backspace session (was tens of
+  KB); arrow presses repaint only the changed item rows. No spinners, no fake
+  progress — just real elapsed ms.
+
+### New input contract (`promptMultiline`)
+
+- **Enter = Continue** (submits the whole buffer, one trailing empty line
+  dropped) — Enter no longer inserts a newline. A lone `.` terminator line
+  still submits the lines above it; an empty document submits an empty value so
+  the caller reports "No text was entered." (OperationalError, exit 1), never a
+  cancel.
+- **Ctrl+J and Alt+Enter** insert newlines — multiline is explicit, and the
+  hint line signposts it (`Enter · continue   Ctrl+J · new line   Ctrl+D ·
+finish   Esc · cancel`).
+- **Ctrl+D** submits the buffer or exits cleanly when empty (unchanged); Esc
+  cancels; Ctrl+C interrupts.
+- **Bracketed paste** (`\x1b[?2004h/l`, readline `paste-start`/`paste-end`):
+  everything between the markers is buffered and applied once — pasted blank
+  lines and newlines survive verbatim.
+- The finish/cancel decisions are pure: `submitEvents`, `terminatorEvents`,
+  `enterOutcome`, `finishOutcome` feed the same `reducePrompt` reducer
+  (contract untouched, all unit-tested in `tests/input.test.ts`, 167 total).
+
+### Menus
+
+- Single-row items, one `›` indicator, aligned inactive indent, diff-based
+  redraw per arrow; `escLabel: 'back' | 'exit'` (landing passes `'exit'`);
+  viewport + "N–M of K" position when the list is taller than the screen.
+- The processing screen (`runWizard`) updates its three real stages in place
+  with `paintLineAt` and appends real elapsed ms; transformation errors
+  `clearScreen()` before rethrowing so the error page renders clean.
+
+### Result page
+
+- ORIGINAL (muted) | REWORKED (accent) columns, a `✓ DONE` header line, the
+  validation section renamed CHECK, consolidated footer, real provenance only,
+  `Press Enter or Esc to return`.
+
+### Verified (all actually run, real services)
+
+| Check                                                | Result                                       |
+| ---------------------------------------------------- | -------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .`                  | pass                                         |
+| `npx prettier --check .`                             | pass                                         |
+| `npm test` (build-first integration)                 | **167/167 pass** (18 files)                  |
+| `npm run build`                                      | pass                                         |
+| pty: enter→editor→type→backspace→Enter→wizard→result | full real flow ends on REWORKED/DONE, exit 0 |
+| pty: ghost repro (UNSCRIP…→backspace)                | one pointer, no ghosts, line stays put       |
+| pty: selection menus (content→tone→level)            | exactly one `›`, in-place repaint            |
+| pty: landing ↑↓ trace (raw ANSI replay)              | initial frame and every repaint align        |
+| pty: Ctrl+J multiline + Enter submits                | 2-line document processed                    |
+| pty: bracketed paste w/ blank line                   | 3 visible rows kept, no collapse             |
+| pty: lone `.` + Enter                                | terminates, submits lines above              |
+| pty: 60-col terminal                                 | frames ≤ 60 cols; ~2.5 KB per editing burst  |
+| pty: ArrowUp + mid-line insert                       | in-place edit, one pointer                   |
+
+### Gotchas recorded
+
+- Any pty test of this app must drain the master side continuously, or the
+  queue fills and the CLI blocks in `write()` — a harness artifact, not an app
+  hang (the real fix is the lean output above).
+- A pty ANSI replay that skips one byte per escape sequence invents ghosts that
+  aren't on the terminal — the trace harness must consume escape sequences
+  exactly (`i += len(m.group(0))`, no off-by-one).
+- `ENTER` arrives as `{name:'return'}`, Ctrl+J / bare LF as `{name:'enter'}`,
+  Ctrl+D as `{ctrl:true,name:'d'}` — the switch keeps the three paths distinct.
+- Esc from the editor runs the wizard's cancel path (`Cancelled.`, exit 0),
+  then the landing loop's standard "Press Enter or Esc to return" gate brings
+  the menu back — cancel is not an app exit.
