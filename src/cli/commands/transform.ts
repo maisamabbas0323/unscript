@@ -3,6 +3,7 @@ import { pageHeader, rule } from '../ui/banner.js';
 import { clearScreen, frameProse, frameWidth } from '../ui/terminal.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { promptMultiline } from '../ui/input.js';
+import { scrollablePage } from '../ui/pager.js';
 import { fitWidth, paintLineAt } from '../ui/screen.js';
 import { OperationalError, EXIT_INTERRUPTED, EXIT_OK } from '../../core/errors.js';
 import {
@@ -50,10 +51,14 @@ function choicesFrom<T extends TypeChoice>(items: T[]): Choice<string>[] {
   }));
 }
 
-function interruptExit(interrupted: boolean): number {
+async function interruptExit(interrupted: boolean): Promise<number> {
   clearScreen();
   process.stdout.write(`${theme.muted(interrupted ? 'Interrupted.' : 'Cancelled.')}\n`);
-  return interrupted ? EXIT_INTERRUPTED : EXIT_OK;
+  if (interrupted) return EXIT_INTERRUPTED;
+  // A returned (non-interrupt) cancel still confirms the read before the
+  // landing re-renders the menu over the live screen.
+  await promptAnyKey();
+  return EXIT_OK;
 }
 
 async function selectOne(
@@ -367,10 +372,8 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
   );
   paintLineAt(stage.statusRow, theme.muted(`completed in ${elapsed}ms`));
 
-  clearScreen();
-  const lines = renderResult(result);
-  for (const line of lines) process.stdout.write(`${line}\n`);
-  return EXIT_OK;
+  const page = await scrollablePage(renderResult(result));
+  return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
 }
 
 /** `unscript humanize` — real interactive transformation (TTY required). */
@@ -433,12 +436,8 @@ export async function runKnowledge(debug: boolean, config?: RuntimeConfig): Prom
   });
   process.stdout.write('\u001b[1A\u001b[K');
 
-  clearScreen();
-  const lines = renderKnowledge(retrieval);
-  for (const line of lines) process.stdout.write(`${line}\n`);
-  await promptAnyKey();
-  clearScreen();
-  return EXIT_OK;
+  const page = await scrollablePage(renderKnowledge(retrieval));
+  return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
 }
 
 function renderKnowledge(retrieval: RetrievalResult): string[] {

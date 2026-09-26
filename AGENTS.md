@@ -49,8 +49,10 @@ skip or fail integration coverage.
   `knowledge`).
 - UI layer: `src/cli/ui/` — `theme.ts` (semantic palette + symbols), `banner.ts`
   (hand-set ASCII wordmark, page headers), `terminal.ts` (frame width/cursor/key
-  hint helpers), `menu.ts` (interactive select + any-key prompts on
-  node:readline raw mode), `input.ts` (multiline text entry).
+  hint helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
+  `menu.ts` (interactive select + any-key prompts on node:readline raw mode),
+  `pager.ts` (scrollable full-screen document page for results), `input.ts`
+  (multiline text entry).
 - Config: `src/config/index.ts` — dotenv `.env` loading + typed validation
   (`UnscriptConfig` shape is pinned by tests; do not break it).
   **A missing `.env` is normal, not an error.** Runtime vars
@@ -112,14 +114,23 @@ and conflicts preserved.
 - Moving into a page (humanize/transform/knowledge/doctor/help/version) clears
   the screen again and renders that page alone — no logo, no leftover menu, no
   stacked content. Exiting clears once more and prints `Bye.` / `Interrupted.`
-  / `Cancelled.`. (Cancelling from inside a page returns through the landing's
-  "Press Enter or Esc to return" gate, then the menu — same as any completed
-  page.)
+  / `Cancelled.`. The transform **result** and **knowledge** pages are
+  scrollable documents (`pager.ts`): they start at the top of the document on
+  any terminal height, scroll with ↑ ↓ / PgUp / PgDn / Home / End, and own
+  their return gate (footer: "Press Enter or Esc to return"), so the landing
+  does not re-prompt for them. Doctor/help/version and cancelled wizard steps
+  return through the landing's overlay `promptAnyKey` gate.
+- **`promptAnyKey` is an overlay, never a wipe**: it pins its label to the
+  bottom row of the terminal and does NOT clear the page beneath it — the
+  result/knowledge/doctor page stays readable until the user actually returns.
+  On keypress only the label row is erased; the next render re-paints over the
+  still-live screen.
 - Interactive frames must never exceed the real terminal width: measure
   `process.stdout.columns` directly (`frameWidth`), not the clamped
   `terminalWidth()`. Every rendered line is bounded so redraw cursor math
-  (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (Result pages use
-  `terminalWidth()` clamping like doctor/help.)
+  (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (Result/knowledge
+  pages are paged documents whose every line is also fitted to `realWidth()`;
+  doctor/help use `terminalWidth()` clamping.)
 - `promptMultiline` (text entry) uses a projected editor on a TTY: the whole
   buffer is live and the terminal is never the source of truth. **Enter =
   Continue**: it submits the whole buffer (one trailing empty line dropped), or

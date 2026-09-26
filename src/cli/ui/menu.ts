@@ -5,9 +5,9 @@ import {
   realWidth,
   realHeight,
   renderRegion,
-  clearRegion,
   updateRegion,
   fitWidth,
+  paintLineAt,
   hintsHtml,
 } from './screen.js';
 
@@ -171,29 +171,41 @@ export function promptSelect<T extends string>(
   });
 }
 
-/** Wait for one keypress (Enter/Esc/arrows/any) to return to the menu. */
+/**
+ * Wait for one keypress (Enter/Esc/arrows/any) to return to the menu.
+ *
+ * Overlay prompt: this does NOT clear the page beneath it. The label is
+ * pinned to the bottom row of the terminal (that row is erased first), so
+ * it stays visible no matter how tall the page content is, and the page —
+ * the transformed result, the knowledge inspector, help — stays readable
+ * until the user actually returns. On keypress the label row is erased
+ * again and the caller re-renders over the still-live screen.
+ */
 export function promptAnyKey(label = 'Press Enter or Esc to return'): Promise<Interrupt> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     let finished = false;
 
-    const topLine = (): string[] => [fitFrame([theme.muted(label)])[0]!];
+    const bottom = (): number => Math.max(1, realHeight());
+    const paint = (): void => {
+      paintLineAt(bottom(), fitWidth(theme.muted(label), realWidth()));
+    };
 
-    const regionTop = (): number => 1;
     const finish = (): void => {
       if (finished) return;
       finished = true;
+      process.stdout.off('resize', paint);
+      paintLineAt(bottom(), '');
       showCursor();
       rl.close();
     };
 
     hideCursor();
-    clearScreen();
-    renderRegion(regionTop(), topLine());
+    paint();
+    process.stdout.on('resize', paint);
 
     process.stdin.on('keypress', (_str: string | undefined, _key: Key | undefined) => {
       if (finished) return;
-      clearRegion(regionTop());
       finish();
       resolve({ interrupted: false });
     });

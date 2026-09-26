@@ -69,12 +69,15 @@ export async function runLanding(debug: boolean): Promise<number> {
     }
 
     clearScreen();
+    let selfGated = false;
     switch (result.id) {
       case 'humanize':
         await runTransform(debug);
+        selfGated = true; // result page is a scrollable, self-gating read
         break;
       case 'knowledge':
         await runKnowledge(debug);
+        selfGated = true; // knowledge page is a scrollable, self-gating read
         break;
       case 'doctor':
         await runDoctor(debug);
@@ -90,7 +93,7 @@ export async function runLanding(debug: boolean): Promise<number> {
         return EXIT_OK;
     }
 
-    if ((await promptAnyKey()).interrupted) {
+    if (!selfGated && (await promptAnyKey()).interrupted) {
       clearScreen();
       process.stdout.write(`${theme.muted('Interrupted.')}\n`);
       return EXIT_INTERRUPTED;

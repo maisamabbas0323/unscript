@@ -385,8 +385,10 @@ finish   Esc · cancel`).
 ### Result page
 
 - ORIGINAL (muted) | REWORKED (accent) columns, a `✓ DONE` header line, the
-  validation section renamed CHECK, consolidated footer, real provenance only,
-  `Press Enter or Esc to return`.
+  validation section renamed CHECK, consolidated footer, real provenance only.
+  Scrollable document since Step 5.6: any terminal height shows the columns +
+  DONE first, with a pinned `↑ ↓ N–M of K · Press Enter or Esc to return`
+  footer.
 
 ### Verified (all actually run, real services)
 
@@ -416,6 +418,55 @@ finish   Esc · cancel`).
   exactly (`i += len(m.group(0))`, no off-by-one).
 - `ENTER` arrives as `{name:'return'}`, Ctrl+J / bare LF as `{name:'enter'}`,
   Ctrl+D as `{ctrl:true,name:'d'}` — the switch keeps the three paths distinct.
-- Esc from the editor runs the wizard's cancel path (`Cancelled.`, exit 0),
-  then the landing loop's standard "Press Enter or Esc to return" gate brings
-  the menu back — cancel is not an app exit.
+- Esc from the editor runs the wizard's cancel path (`Cancelled.`, exit 0);
+  since Step 5.6 that cancel is acknowledged through the interruptExit overlay
+  gate (the landing no longer re-prompts for humanize/knowledge — they are
+  self-gating) — cancel is not an app exit.
+
+## Result page fix (Step 5.6) — the return gate must never wipe the page
+
+### Symptom
+
+"Selecting all options produces no result screen." The transformation ran
+(real MCP + Gemini, real elapsed ms) and the result page was painted — but the
+landing loop then called the menu's `promptAnyKey`, which did `clearScreen()`
+and repainted a single "Press Enter or Esc to return" line. The result bytes
+were emitted and then wiped in the same synchronous turn, so a human never saw
+them; a pty harness that checked the buffered byte stream (not the live screen)
+reported success. `runKnowledge` had the same wipe through its own
+self-gate, plus a double-prompt with the landing gate.
+
+### Fix
+
+- `promptAnyKey` is now an overlay gate: it pins its label to the bottom row of
+  the terminal and never clears the page beneath it. On keypress only the
+  label row is erased; the next render paints over the still-live screen.
+- The transform **result** and **knowledge** pages are now scrollable documents
+  (`src/cli/ui/pager.ts`): the document fills the cleared screen top-down and
+  is clipped to the real terminal height, so on any terminal the first viewport
+  shows the reworked text, the ORIGINAL|REWORKED columns and `✓ DONE` — the
+  primary content is never pushed off a short terminal by later sections. The
+  last row is a pinned footer (`↑ ↓ N–M of K … Press Enter or Esc to return`);
+  ↑ ↓ PgUp/PgDn Home/End scroll, Enter/Esc finish. Every line is fitted to
+  `realWidth()` so colored/unwrapped lines can't overflow and break redraw
+  math.
+- The landing skips its generic gate for humanize/knowledge (they are
+  self-gating); doctor/help/version and cancelled wizard steps still return
+  through the overlay `promptAnyKey`.
+- `interruptExit` now awaits the overlay gate for non-interrupting cancels, so
+  "Cancelled." stays on screen until the user acknowledges.
+
+### Verified (all actually run against the real services, pyte live-screen emulation)
+
+| Check                                                    | Result                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `npx tsc --noEmit` / `npx eslint .`                      | pass                                                                     |
+| `npx prettier --check .`                                 | pass                                                                     |
+| `npm test` (build-first integration)                     | **167/167 pass** (18 files)                                              |
+| pty 80×24: full flow → result pager                      | REWORKED/ORIGINAL columns + `✓ DONE` visible 1st viewport, footer pinned |
+| pty 80×24: ↓ scrolls / Enter returns to landing menu     | footer `1–23 of 54` → `2–24 of 54`, menu re-renders                      |
+| pty: no `\x1b[2J` between result render and pager footer | no idle wipe (byte-level)                                                |
+| pty: `unscript humanize` subcommand                      | result pager shown, Enter exits 0                                        |
+| pty: landing → Inspect knowledge → pager                 | page shows, scrolls, Enter returns to menu                               |
+| pty: Esc at wizard menu                                  | "Cancelled." + overlay gate, Enter → menu                                |
+| pty: landing → doctor → gate                             | doctor checks visible, gate pinned, Enter → menu                         |
