@@ -205,7 +205,7 @@ export function promptSelect<T extends string>(
 
     hideCursor();
     clearScreen();
-    process.stdout.write(`${fitFrame(topLines).join('\n')}\n`);
+    process.stdout.write(`${fitFrame(topLines, realWidth()).join('\n')}\n`);
     fullPaint();
   });
 }

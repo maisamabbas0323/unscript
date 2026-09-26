@@ -1,6 +1,6 @@
 import { theme } from '../ui/theme.js';
 import { introBlock } from '../ui/banner.js';
-import { frameWidth, clearScreen } from '../ui/terminal.js';
+import { clearScreen } from '../ui/terminal.js';
 import { realHeight } from '../ui/screen.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { OperationalError, EXIT_OK, EXIT_INTERRUPTED } from '../../core/errors.js';
@@ -13,10 +13,11 @@ import { runTransform, runKnowledge } from './transform.js';
 /**
  * `unscript` — the interactive home screen.
  *
- * The terminal is cleared first, then the colorful wordmark is pinned to
- * the top-left corner (3-line top margin, 2-column left margin) and
- * stays put while the menu redraws around it. Selecting a category clears
- * the terminal again and shows that page on its own — the logo is never
+ * The terminal is cleared first, then the logo identity block is pinned to
+ * the top-left corner (1 blank line above, 2-column left margin) on tall
+ * terminals — compact `UNSCRIPT` header on short ones — and stays put
+ * while the menu redraws around it. Selecting a category clears the
+ * terminal again and shows that page on its own — the logo is never
  * duplicated below earlier content.
  */
 
@@ -54,18 +55,27 @@ const CHOICES: Choice<LandingChoice>[] = [
   { id: 'exit', label: 'Exit', description: 'Leave the interactive home screen.' },
 ];
 
+/** The identity block is measured at the real terminal width (the logo is
+ * 76 columns and must not be squeezed to the 60-column menu frame); the
+ * logo and wordmark degrade gracefully on narrower terminals. */
+function identityWidth(): number {
+  const columns = process.stdout.columns;
+  return Math.max(24, columns && columns > 0 ? columns : 80);
+}
+
 /**
  * Static top of the home screen. Tall terminals get the full pinned
- * wordmark identity block; short terminals get a compact header so the
+ * logo identity block; short terminals get a compact header so the
  * boxed menu below always fits on screen without scrolling (which would
  * break the absolute redraw math and hide the menu).
  */
 function landingTop(): string[] {
-  const width = frameWidth();
   const { version } = readPackageJson();
-  const tall = realHeight() >= 38;
+  const tall = realHeight() >= 34;
   const status = `${theme.success('Runtime ready')}${theme.muted(` · v${version}`)}`;
-  const intro = tall ? introBlock(width, { top: 3, left: 2 }) : [`  ${theme.brand('UNSCRIPT')}`];
+  const intro = tall
+    ? introBlock(identityWidth(), { top: 1, left: 2 })
+    : [`  ${theme.brand('UNSCRIPT')}`];
   return tall
     ? [...intro, '', `  ${status}`, '', '  ' + theme.bright('What would you like to do?')]
     : [...intro, `  ${status}`, '  ' + theme.bright('What would you like to do?')];

@@ -559,3 +559,40 @@ self-gate, plus a double-prompt with the landing gate.
 | `knowledge` page                                               | "Inspecting …" summary + patterns/rules/preservation/sources only |
 | repeated screens in one session                                | no `MaxListenersExceededWarning`                                  |
 | `doctor` env line                                              | `UNSCRIPT · DOCTOR · ` live line, then doctor page + return gate  |
+
+## The logo (Step 5.9) — a red shadow-style UNSCRIPT identity block
+
+### What changed
+
+- **New identity block.** The home screen now opens with a hand-set
+  "UNSCRIPT" in a shadow-style block face — 10 rows × 76 columns, red ink
+  (`colors.red`), white highlights (`colors.white`), dim gray fill
+  (`colors.gray`), and white-on-red inverted cells (`colors.bgRed` +
+  `colors.white`) — matching the app's red/white theme. The art lives in
+  `banner.ts` as `LOGO_ROWS` (run-length `[role, text]` tables, one per
+  row) rendered by `logoLines(width)`, so every role maps to a themed paint
+  that auto-disables with NO_COLOR and non-TTY output (verified: under
+  `NO_COLOR` only the cursor/clear CSI codes remain, zero color codes).
+- **Graceful degradation.** Wide terminals get the full 10-row logo; below
+  76 columns it falls back to the 6-row block wordmark (`wordmarkLines`),
+  then to the single branded line on narrow screens. The older rainbow
+  wordmark is kept intact as that fallback.
+- **Sizing that respects the frame.** The identity block measures
+  `process.stdout.columns` directly (`identityWidth()` in `landing.ts`) —
+  it is decorative and must not be squeezed into the 60-column menu frame
+  — while `promptSelect` fits its pinned `top` block with
+  `fitFrame(topLines, realWidth())` so no line can wrap and break the
+  absolute redraw math. Tall terminals (≥ 34 rows) show the logo pinned
+  top-left (1 blank line above, 2-column indent); shorter terminals keep
+  the compact `UNSCRIPT` header so the menu never scrolls off screen.
+- `colors.ts` gained `white` and `bgRed` paints (same NO_COLOR/TTY policy).
+
+### Verified
+
+| Check                                                          | Result                                                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `npx prettier --check .` | pass                                                                                              |
+| `npm test` (build-first integration)                           | pass (full suite, incl. 2 new `logoLines` unit tests)                                             |
+| pty 100×34 (tall)                                              | full 76-col logo + tagline + rule + status + 6-item menu + hints + detail pane, all within screen |
+| pty 80×24 (compact)                                            | `UNSCRIPT` header + full menu, no overflow                                                        |
+| pty 100×34 with `NO_COLOR=1`                                   | logo renders plain; only cursor/clear CSI codes remain                                            |

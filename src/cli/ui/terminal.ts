@@ -36,9 +36,11 @@ export function clearFrame(lines: number): void {
   process.stdout.write(`\u001b[${lines}A\u001b[J`);
 }
 
-/** Bound every rendered line to the frame width (no terminal wrap). */
-export function fitFrame(lines: string[]): string[] {
-  const width = frameWidth();
+/** Bound every rendered line to a width (default: the frame width), so no
+ * line can wrap in the terminal. Pass `realWidth()` when a pinned identity
+ * block may span more than the 60-column menu frame (e.g. the 76-column
+ * logo on the home screen). */
+export function fitFrame(lines: string[], width: number = frameWidth()): string[] {
   return lines.map((line) => {
     const visible = line.replace(/\u001b\[[0-9;]*m/g, '');
     if (visible.length <= width) return line;

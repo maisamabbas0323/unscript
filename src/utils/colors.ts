@@ -35,5 +35,8 @@ export const colors = {
   blue: ansi('34', '39'),
   magenta: ansi('35', '39'),
   cyan: ansi('36', '39'),
+  white: ansi('37', '39'),
   gray: ansi('90', '39'),
+  /** Red background (used for inverted logo cells). */
+  bgRed: ansi('41', '49'),
 };

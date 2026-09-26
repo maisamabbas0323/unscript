@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { centerLine, visibleWidth, wrap } from '../src/utils/text.js';
-import { wordmarkLines, pageHeader, tagline } from '../src/cli/ui/banner.js';
+import { wordmarkLines, logoLines, pageHeader, tagline } from '../src/cli/ui/banner.js';
 
 describe('text utilities (UI)', () => {
   it('visibleWidth ignores ANSI codes', () => {
@@ -42,6 +42,17 @@ describe('banner', () => {
     const lines = wordmarkLines(100).map((l) => l.replace(/\u001b\[[0-9;]*m/g, ''));
     const widths = new Set(lines.map((l) => l.length));
     expect(widths.size).toBe(1);
+  });
+
+  it('renders the 10-row logo on wide terminals, bounded to its width', () => {
+    const lines = logoLines(100).map((l) => l.replace(/\u001b\[[0-9;]*m/g, ''));
+    expect(lines).toHaveLength(10);
+    expect(Math.max(...lines.map((l) => l.length))).toBeLessThanOrEqual(76);
+  });
+
+  it('logo falls back to the block wordmark when too narrow for the logo', () => {
+    expect(logoLines(60)).toHaveLength(6); // 6-row block wordmark
+    expect(logoLines(30)).toHaveLength(1); // compact brand line
   });
 
   it('tagline stays short and centered', () => {

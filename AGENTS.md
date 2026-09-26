@@ -48,7 +48,7 @@ skip or fail integration coverage.
   `doctor`, `landing`, `planned`, `transform` — which hosts both `humanize` and
   `knowledge`).
 - UI layer: `src/cli/ui/` — `theme.ts` (semantic palette + symbols), `banner.ts`
-  (hand-set ASCII wordmark, page headers), `terminal.ts` (frame width/cursor/key
+  (the red shadow-style "UNSCRIPT" logo + wordmark fallback, page headers), `terminal.ts` (frame width/cursor/key
   hint helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
   `menu.ts` (interactive select + any-key prompts on node:readline raw mode),
   `pager.ts` (scrollable full-screen document page for results), `input.ts`
@@ -103,8 +103,14 @@ and conflicts preserved.
   interface.** Listen on `process.stdin.on('keypress', (str, key) => …)`, not
   `rl.on('keypress', …)`, after creating the interface with `terminal: true`.
 - **Full-screen app, not a scrolling frame**: the screen is cleared
-  (`\x1b[2J\x1b[3J\x1b[H`) once at startup with the colorful wordmark pinned to
-  the top-left (3 blank lines above, 2-column indent). `promptSelect` paints
+  (`\x1b[2J\x1b[3J\x1b[H`) once at startup. On tall terminals (≥ 34 rows) the
+  identity block is the 10-row shadow-style logo (red ink, white highlights,
+  dim fill — `logoLines()` in `banner.ts`), pinned top-left with 1 blank line
+  above and a 2-column indent; on shorter terminals it degrades to the 6-row
+  block wordmark, then to a single `UNSCRIPT` brand line, and `wordmarkLines`
+  stays as the fallback. The identity block measures `process.stdout.columns`
+  directly (never the 60-column menu frame) and `promptSelect` fits its `top`
+  block to `realWidth()` so nothing wraps. `promptSelect` paints
   its static `top` block exactly once and only redraws the choice region below
   it — the logo must never duplicate or re-render on arrow keys. Choices are
   restrained single-row items with exactly **one** indicator (`›` accents the
@@ -182,8 +188,9 @@ and conflicts preserved.
   validates the text first, then connects to the Context MCP. Esc/cancel
   and empty/whitespace-only input never touch Sanity or Gemini and never
   show a fake result.
-- Semantic colors via `ui/theme.ts`; the wordmark uses a letter-by-letter color
-  cycle that auto-disables with NO_COLOR. Status is never color-only
+- Semantic colors via `ui/theme.ts`; the logo paints role→color (`ink` red,
+  `light` white, `dim` gray, `block` white-on-red bg via `colors.bgRed`), all
+  auto-disabling with NO_COLOR. Status is never color-only
   (PASS/WARN/FAIL text labels stay). No fake progress, spinners, or animations;
   doctor and the transform flow show real elapsed milliseconds.
 
