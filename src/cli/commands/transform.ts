@@ -3,8 +3,9 @@ import { pageHeader, rule } from '../ui/banner.js';
 import { clearScreen, frameProse, frameWidth } from '../ui/terminal.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { promptMultiline } from '../ui/input.js';
+import { liveStatus } from '../ui/live.js';
 import { scrollablePage } from '../ui/pager.js';
-import { fitWidth, paintLineAt } from '../ui/screen.js';
+import { fitWidth } from '../ui/screen.js';
 import { OperationalError, EXIT_INTERRUPTED, EXIT_OK } from '../../core/errors.js';
 import {
   loadRuntimeConfig,
@@ -12,8 +13,8 @@ import {
   runtimeSetupMessage,
   type RuntimeConfig,
 } from '../../config/env.js';
-import { connectRuntime, preflightContextMcp } from '../runtime.js';
-import { runTransformation } from '../../agent/agent.js';
+import { connectRuntime, preflightContextMcp, type PreflightStep } from '../runtime.js';
+import { runTransformation, type TransformationStage } from '../../agent/agent.js';
 import type { TransformationResult } from '../../agent/types.js';
 import {
   listTypeChoices,
@@ -33,9 +34,30 @@ import { debugLog } from '../../utils/log.js';
  * transform with Gemini and run deterministic preservation validation.
  * Every option and rule shown is retrieved data — a failure anywhere in
  * the chain surfaces as a real error, never a fabricated result.
+ *
+ * Live status: the "Connecting…" line and the rework run share one
+ * single-line progress display (`liveStatus`, prefix `SANITY`) — real
+ * step names at real phase boundaries with a single real elapsed timer.
+ * After the menu selections finish, only the result page is shown (the
+ * background phases collapse into the live line, which is replaced by
+ * the result).
  */
 
 type SelectFlowStep = 'content-type' | 'tone' | 'level';
+
+/** Preflight phase labels — fired only after each real phase completes. */
+const CONNECT_STEP_LABELS: Record<PreflightStep, string> = {
+  initialize: 'session initialized',
+  'initial-context': 'initial context loaded',
+  'tools-list': 'tools ready',
+};
+
+/** Rework phase labels — each maps to real work inside runTransformation. */
+const REWORK_STEP_LABELS: Record<TransformationStage, string> = {
+  retrieving: 'Retrieving relevant guidance',
+  reworking: 'Reworking your text',
+  checking: 'Checking the result',
+};
 
 function wizardTop(title: string, subtitle: string): string[] {
   const width = frameWidth();
@@ -47,7 +69,9 @@ function choicesFrom<T extends TypeChoice>(items: T[]): Choice<string>[] {
   return items.map((item) => ({
     id: item.slug,
     label: item.title,
-    note: item.description !== undefined ? item.description.slice(0, 64) : undefined,
+    // Full description feeds the live detail pane under the list; the
+    // item row itself stays a single clean line.
+    description: item.description,
   }));
 }
 
@@ -63,6 +87,7 @@ async function interruptExit(interrupted: boolean): Promise<number> {
 
 async function selectOne(
   step: SelectFlowStep,
+  stepNumber: number,
   items: TypeChoice[],
 ): Promise<{ slug: string } | { interrupted: boolean }> {
   if (items.length === 0) {
@@ -83,7 +108,7 @@ async function selectOne(
     level: 'How strongly should the text be reworked?',
   };
   const result = await promptSelect(
-    () => wizardTop(titles[step], subtitles[step]),
+    () => wizardTop(titles[step], `${subtitles[step]}  ·  step ${stepNumber} of 3`),
     choicesFrom(items),
   );
   if (result.kind === 'exit') return { interrupted: result.interrupted };
@@ -99,21 +124,50 @@ function section(title: string): string[] {
   return ['', theme.bright(title), rule(Math.min(width, 80)), ''];
 }
 
-/** Real provenance of the rules and patterns that shaped the result. */
-function appliedRuleLines(result: TransformationResult): string[] {
-  const rules = result.provenance.filter(
-    (entry) => entry.kind === 'transformationRule' || entry.kind === 'writingPattern',
-  );
-  if (rules.length === 0)
-    return [`  ${theme.muted('none retrieved — Sanity returned no applicable knowledge')}`];
-  return rules.map((entry) => {
-    const label = entry.kind === 'writingPattern' ? 'pattern' : 'rule';
-    const source =
-      entry.source !== undefined && entry.source.name !== undefined
-        ? ` — ${entry.source.name}`
-        : '';
-    return `  • ${entry.title}  ${theme.muted(`(${label})${source}`)}`;
-  });
+/**
+ * The applied-knowledge block on the result page. A compact selection
+ * line, then the transformation rules and writing patterns as grouped,
+ * source-tagged items — real provenance only, never invented.
+ */
+function knowledgeAppliedLines(result: TransformationResult): string[] {
+  const selection = [
+    result.applied.contentTypeTitle,
+    result.applied.toneTitle,
+    result.applied.levelTitle,
+  ].filter((title): title is string => title !== undefined && title !== '');
+  const lines: string[] = [
+    `  ${theme.muted('Selection')}  ${
+      selection.length > 0 ? theme.bright(selection.join(' · ')) : theme.muted('unknown')
+    }`,
+  ];
+
+  const rules = result.provenance.filter((entry) => entry.kind === 'transformationRule');
+  const patterns = result.provenance.filter((entry) => entry.kind === 'writingPattern');
+  const group = (label: string, entries: typeof rules): void => {
+    if (entries.length === 0) return;
+    lines.push(`  ${theme.bright(label)}`);
+    for (const entry of entries) {
+      const source =
+        entry.source !== undefined && entry.source.name !== undefined
+          ? `  ${theme.muted(entry.source.name)}`
+          : '';
+      lines.push(`    ${theme.accent(sym.dot)} ${entry.title}${source}`);
+    }
+  };
+
+  if (rules.length === 0 && patterns.length === 0) {
+    lines.push(`  ${theme.muted('none retrieved — Sanity returned no applicable knowledge')}`);
+  } else {
+    group('Transformation rules', rules);
+    group('Patterns', patterns);
+  }
+
+  if (result.applied.preservationRuleIds.length > 0) {
+    lines.push(
+      `  ${theme.success(sym.check)} ${result.applied.preservationRuleIds.length} preservation rule(s) enforced`,
+    );
+  }
+  return lines;
 }
 
 /** Unique source names (real retrieval provenance, never invented). */
@@ -200,15 +254,7 @@ function renderResult(result: TransformationResult): string[] {
   );
 
   lines.push(...section('KNOWLEDGE APPLIED'));
-  lines.push(`  Content type:  ${result.applied.contentTypeTitle ?? 'unknown'}`);
-  lines.push(`  Tone:          ${result.applied.toneTitle ?? 'unknown'}`);
-  lines.push(`  Level:         ${result.applied.levelTitle ?? 'unknown'}`);
-  lines.push(...appliedRuleLines(result));
-  if (result.applied.preservationRuleIds.length > 0) {
-    lines.push(
-      `  ${theme.muted(`${result.applied.preservationRuleIds.length} preservation rule(s) enforced`)}`,
-    );
-  }
+  lines.push(...knowledgeAppliedLines(result));
 
   lines.push(...section('SOURCES'));
   lines.push(...sourceLines(result));
@@ -253,51 +299,6 @@ function renderResult(result: TransformationResult): string[] {
   return lines;
 }
 
-/** Real stages of a transformation run — each maps to actual work. */
-const RUN_STAGES = [
-  'Retrieving relevant guidance',
-  'Reworking your text',
-  'Checking the result',
-] as const;
-
-function stageLine(
-  stage: string,
-  mark: 'pending' | 'active' | 'done' | 'fail',
-  detail = '',
-): string {
-  const bullet =
-    mark === 'active'
-      ? theme.accent(sym.pointer)
-      : mark === 'done'
-        ? theme.success(sym.check)
-        : mark === 'fail'
-          ? theme.error(sym.fail)
-          : theme.muted(sym.dot);
-  const suffix = detail !== '' ? theme.muted(`  ${detail}`) : '';
-  return `  ${bullet} ${stage}${suffix}`;
-}
-
-/**
- * Compact processing screen. Every row is static and painted once; each
- * stage line is updated in place (`paintLineAt`) as the real work
- * completes. No spinners and no fabricated progress — elapsed time is
- * appended only when the run finishes.
- */
-function renderProcessingScreen(): { lines: string[]; stageRow: number; statusRow: number } {
-  const width = pageWidth();
-  const lines = [
-    ...pageHeader('Humanize', width),
-    '',
-    theme.bright('REWORKING'),
-    rule(Math.min(width, 80)),
-    '',
-  ];
-  const stageRow = lines.length + 1; // 1-based row of the first stage line
-  for (const stage of RUN_STAGES) lines.push(stageLine(stage, 'pending'));
-  lines.push('', theme.muted('This only takes a moment.'));
-  return { lines, stageRow, statusRow: stageRow + RUN_STAGES.length + 1 };
-}
-
 async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number> {
   // Input first: cancel or empty input must not touch Sanity or Gemini.
   const textResult = await promptMultiline({
@@ -314,66 +315,72 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
 
   const connection = connectRuntime(config);
 
+  // Live preflight: one line that names each real phase as it completes.
   clearScreen();
-  process.stdout.write(`${theme.muted('Connecting to the Context MCP…')}\n`);
+  const connect = liveStatus(1);
+  connect.setStep('connecting to the Context MCP');
   const connectedAt = Date.now();
-  await preflightContextMcp(connection.mcp);
-  process.stdout.write('\u001b[1A\u001b[K');
+  await preflightContextMcp(connection.mcp, (step) => connect.setStep(CONNECT_STEP_LABELS[step]));
   if (debug) debugLog(`context mcp preflight (initial_context) in ${Date.now() - connectedAt}ms`);
 
-  const [contentTypes, tones, levels] = await Promise.all([
-    listTypeChoices(connection.mcp, 'contentType'),
-    listTypeChoices(connection.mcp, 'toneRule'),
-    listTypeChoices(connection.mcp, 'humanizationLevel'),
-  ]);
-
-  const contentType = await selectOne('content-type', contentTypes);
-  if ('interrupted' in contentType) return interruptExit(contentType.interrupted);
-
-  const tone = await selectOne('tone', tones);
-  if ('interrupted' in tone) return interruptExit(tone.interrupted);
-
-  const level = await selectOne('level', levels);
-  if ('interrupted' in level) return interruptExit(level.interrupted);
-
-  const stage = renderProcessingScreen();
-  clearScreen();
-  process.stdout.write(`${stage.lines.join('\n')}\n`);
-  const startedAt = Date.now();
-  paintLineAt(stage.stageRow, stageLine(RUN_STAGES[0], 'active'));
-
-  let result: TransformationResult;
+  connect.setStep('fetching content types, tones and levels');
   try {
-    result = await runTransformation(connection, {
-      text: originalText,
-      contentTypeSlug: contentType.slug,
-      toneSlug: tone.slug,
-      levelSlug: level.slug,
-    });
-  } catch (error) {
-    // Leave a clean screen for the error page — no stale stage UI above it.
+    const [contentTypes, tones, levels] = await Promise.all([
+      listTypeChoices(connection.mcp, 'contentType'),
+      listTypeChoices(connection.mcp, 'toneRule'),
+      listTypeChoices(connection.mcp, 'humanizationLevel'),
+    ]);
+
+    connect.done('options loaded');
+    connect.stop();
+
+    const contentType = await selectOne('content-type', 1, contentTypes);
+    if ('interrupted' in contentType) return interruptExit(contentType.interrupted);
+
+    const tone = await selectOne('tone', 2, tones);
+    if ('interrupted' in tone) return interruptExit(tone.interrupted);
+
+    const level = await selectOne('level', 3, levels);
+    if ('interrupted' in level) return interruptExit(level.interrupted);
+
+    // After the selections finish, the rework collapses to one live line
+    // and then only the result page remains — no background screen dump.
     clearScreen();
-    throw error;
+    const rework = liveStatus(1);
+    rework.setStep(REWORK_STEP_LABELS.retrieving);
+    const startedAt = Date.now();
+    let result: TransformationResult;
+    try {
+      result = await runTransformation(
+        connection,
+        {
+          text: originalText,
+          contentTypeSlug: contentType.slug,
+          toneSlug: tone.slug,
+          levelSlug: level.slug,
+        },
+        (stage) => rework.setStep(REWORK_STEP_LABELS[stage]),
+      );
+    } catch (error) {
+      // Leave a clean screen for the error page — no stale status line above it.
+      rework.stop();
+      clearScreen();
+      throw error;
+    }
+    const elapsed = Date.now() - startedAt;
+    debugLog(`transformation finished in ${elapsed}ms`);
+
+    rework.done(
+      `DONE in ${elapsed}ms · ${result.applied.ruleIds.length} rule(s) · ` +
+        `${result.applied.patternIds.length} pattern(s)`,
+    );
+    rework.stop();
+
+    const page = await scrollablePage(renderResult(result));
+    return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
+  } finally {
+    connect.stop();
   }
-  const elapsed = Date.now() - startedAt;
-  debugLog(`transformation finished in ${elapsed}ms`);
-
-  paintLineAt(stage.stageRow, stageLine(RUN_STAGES[0], 'done'));
-  paintLineAt(stage.stageRow + 1, stageLine(RUN_STAGES[1], 'done'));
-  paintLineAt(
-    stage.stageRow + 2,
-    result.preservation.passed
-      ? stageLine(RUN_STAGES[2], 'done', `${result.preservation.checked} item(s) verified`)
-      : stageLine(
-          RUN_STAGES[2],
-          'fail',
-          `${result.preservation.changedProtectedItems.length} item(s) changed`,
-        ),
-  );
-  paintLineAt(stage.statusRow, theme.muted(`completed in ${elapsed}ms`));
-
-  const page = await scrollablePage(renderResult(result));
-  return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
 }
 
 /** `unscript humanize` — real interactive transformation (TTY required). */
@@ -393,7 +400,14 @@ export async function runTransform(debug: boolean, config?: RuntimeConfig): Prom
   return runWizard(debug, resolved);
 }
 
-/** `unscript knowledge` — inspect real retrieved knowledge (TTY required). */
+/**
+ * `unscript knowledge` — inspect real retrieved knowledge (TTY required).
+ *
+ * Unlike humanize, this flow has no selection menus: it goes straight to
+ * the page (like version/help/doctor). It fetches the option lists from
+ * Sanity and inspects the first content type, tone, and level — real
+ * retrieved data, no hidden interaction steps.
+ */
 export async function runKnowledge(debug: boolean, config?: RuntimeConfig): Promise<number> {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     throw new OperationalError('the knowledge inspector needs a terminal', {
@@ -409,33 +423,55 @@ export async function runKnowledge(debug: boolean, config?: RuntimeConfig): Prom
   const connection = connectRuntime(resolved);
 
   clearScreen();
-  process.stdout.write(`${theme.muted('Connecting to the Context MCP…')}\n`);
-  await preflightContextMcp(connection.mcp);
-  process.stdout.write('\u001b[1A\u001b[K');
+  const progress = liveStatus(1);
+  progress.setStep('connecting to the Context MCP');
+  await preflightContextMcp(connection.mcp, (step) => progress.setStep(CONNECT_STEP_LABELS[step]));
   if (debug) debugLog('knowledge: context mcp preflight ok');
 
-  const [contentTypes, tones, levels] = await Promise.all([
-    listTypeChoices(connection.mcp, 'contentType'),
-    listTypeChoices(connection.mcp, 'toneRule'),
-    listTypeChoices(connection.mcp, 'humanizationLevel'),
-  ]);
+  progress.setStep('fetching content types, tones and levels');
+  let contentTypes: TypeChoice[];
+  let tones: TypeChoice[];
+  let levels: TypeChoice[];
+  try {
+    [contentTypes, tones, levels] = await Promise.all([
+      listTypeChoices(connection.mcp, 'contentType'),
+      listTypeChoices(connection.mcp, 'toneRule'),
+      listTypeChoices(connection.mcp, 'humanizationLevel'),
+    ]);
+  } catch (error) {
+    progress.stop();
+    throw error;
+  }
+  if (contentTypes.length === 0 || tones.length === 0 || levels.length === 0) {
+    progress.stop();
+    throw new OperationalError(
+      'The knowledge base returned no content types, tones, or humanization levels.',
+      { hint: 'Add the matching Sanity knowledge documents, then re-run.' },
+    );
+  }
 
-  const contentType = await selectOne('content-type', contentTypes);
-  if ('interrupted' in contentType) return interruptExit(contentType.interrupted);
-  const tone = await selectOne('tone', tones);
-  if ('interrupted' in tone) return interruptExit(tone.interrupted);
-  const level = await selectOne('level', levels);
-  if ('interrupted' in level) return interruptExit(level.interrupted);
+  // Direct inspection: first option of each list (deterministic, real).
+  const contentType = contentTypes[0]!;
+  const tone = tones[0]!;
+  const level = levels[0]!;
+
+  progress.setStep('Retrieving knowledge from Sanity');
+  let retrieval: RetrievalResult;
+  try {
+    retrieval = await retrieveKnowledge(connection.mcp, {
+      contentTypeSlug: contentType.slug,
+      toneSlug: tone.slug,
+      levelSlug: level.slug,
+    });
+  } catch (error) {
+    progress.stop();
+    throw error;
+  }
+  progress.done(`inspecting ${contentType.title} · ${tone.title} · ${level.title}`);
+  progress.stop();
+  if (debug) debugLog(`knowledge: inspects ${contentType.slug}/${tone.slug}/${level.slug}`);
 
   clearScreen();
-  process.stdout.write(`${theme.muted('Retrieving knowledge from Sanity…')}\n`);
-  const retrieval = await retrieveKnowledge(connection.mcp, {
-    contentTypeSlug: contentType.slug,
-    toneSlug: tone.slug,
-    levelSlug: level.slug,
-  });
-  process.stdout.write('\u001b[1A\u001b[K');
-
   const page = await scrollablePage(renderKnowledge(retrieval));
   return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
 }
@@ -445,120 +481,101 @@ function renderKnowledge(retrieval: RetrievalResult): string[] {
   const lines: string[] = ['', ...pageHeader('Knowledge', width), ''];
   const conflicts = detectRuleConflicts(retrieval.transformationRules);
 
-  const push = (label: string, value?: string): void => {
-    if (value !== undefined && value !== '')
-      lines.push(`  ${theme.bright(label)}${wrap(value, width - 4)}`);
+  // Compact, real summary of what is being inspected — no bulky dumps.
+  const selection = [
+    retrieval.contentType?.title,
+    retrieval.tone?.title,
+    retrieval.humanizationLevel?.title,
+  ].filter((title): title is string => title !== undefined && title !== '');
+  lines.push(
+    `  ${theme.muted('Inspecting')}  ${
+      selection.length > 0 ? theme.bright(selection.join(' · ')) : theme.muted('no selection')
+    }`,
+    '',
+  );
+
+  const items = (lines_: string[]): void => {
+    for (const entry of lines_) lines.push(`${entry}`);
   };
 
-  if (retrieval.contentType !== null) {
-    lines.push(theme.bright('CONTENT TYPE'), rule(Math.min(width, 80)));
-    push('', retrieval.contentType.title);
-    push('', retrieval.contentType.description);
-    push(
-      '',
-      retrieval.contentType.audience ? `Audience: ${retrieval.contentType.audience}` : undefined,
-    );
-    push(
-      '',
-      retrieval.contentType.preservationConsiderations
-        ? `Preservation considerations: ${retrieval.contentType.preservationConsiderations}`
-        : undefined,
-    );
-  }
-  if (retrieval.humanizationLevel !== null) {
-    lines.push('', theme.bright('HUMANIZATION LEVEL'), rule(Math.min(width, 80)));
-    push('', retrieval.humanizationLevel.title);
-    push('', retrieval.humanizationLevel.description);
-    push(
-      '',
-      retrieval.humanizationLevel.sentenceChange
-        ? `Sentences: ${retrieval.humanizationLevel.sentenceChange}`
-        : undefined,
-    );
-    push(
-      '',
-      retrieval.humanizationLevel.vocabularyChange
-        ? `Vocabulary: ${retrieval.humanizationLevel.vocabularyChange}`
-        : undefined,
-    );
-  }
-  if (retrieval.tone !== null) {
-    lines.push('', theme.bright('TONE'), rule(Math.min(width, 80)));
-    push('', retrieval.tone.title);
-    push(
-      '',
-      retrieval.tone.toneCharacteristics
-        ? `Characteristics: ${retrieval.tone.toneCharacteristics}`
-        : undefined,
-    );
-    push(
-      '',
-      retrieval.tone.preferredLanguage
-        ? `Preferred language: ${retrieval.tone.preferredLanguage}`
-        : undefined,
-    );
-    push(
-      '',
-      retrieval.tone.avoidLanguage ? `Avoid language: ${retrieval.tone.avoidLanguage}` : undefined,
-    );
-  }
-
   if (retrieval.patterns.length > 0) {
-    lines.push('', theme.bright('WRITING PATTERNS'), rule(Math.min(width, 80)));
+    lines.push(theme.bright('WRITING PATTERNS'), rule(Math.min(width, 80)), '');
     for (const pattern of retrieval.patterns) {
-      lines.push(`  • ${theme.bright(pattern.title)} (${pattern.severity ?? 'severity unknown'})`);
-      if (pattern.pattern !== undefined) lines.push(`    ${wrap(pattern.pattern, width - 4)}`);
-      if (pattern.whenToChange !== undefined) {
-        lines.push(`    When to change: ${wrap(pattern.whenToChange, width - 4)}`);
+      const severity = pattern.severity !== undefined ? `  ${theme.muted(pattern.severity)}` : '';
+      lines.push(`  ${theme.accent(sym.pointer)} ${theme.bright(pattern.title)}${severity}`);
+      if (pattern.pattern !== undefined && pattern.pattern !== '') {
+        items(wrapInline(`    ${pattern.pattern}`, width - 2));
       }
+      if (pattern.whenToChange !== undefined && pattern.whenToChange !== '') {
+        items(
+          wrapInline(`    ${theme.muted('When to change:')} ${pattern.whenToChange}`, width - 2),
+        );
+      }
+      lines.push('');
     }
   }
 
-  lines.push('', theme.bright('TRANSFORMATION RULES'), rule(Math.min(width, 80)));
-  for (const rule of retrieval.transformationRules) {
-    const priority = rule.priority !== undefined ? ` · priority ${rule.priority}` : '';
-    lines.push(`  ${theme.bright(rule.title)} (${rule.slug ?? rule._id})${priority}`);
-    if (rule.instruction !== undefined) lines.push(`    ${wrap(rule.instruction, width - 4)}`);
-    if (rule.trigger !== undefined && rule.trigger !== '') {
-      lines.push(`    Trigger: ${wrap(rule.trigger, width - 4)}`);
+  lines.push(theme.bright('TRANSFORMATION RULES'), rule(Math.min(width, 80)), '');
+  for (const rule_ of retrieval.transformationRules) {
+    const priority =
+      rule_.priority !== undefined ? `  ${theme.muted(`priority ${rule_.priority}`)}` : '';
+    lines.push(`  ${theme.accent(sym.pointer)} ${theme.bright(rule_.title)}${priority}`);
+    if (rule_.instruction !== undefined && rule_.instruction !== '') {
+      items(wrapInline(`    ${rule_.instruction}`, width - 2));
     }
+    if (rule_.trigger !== undefined && rule_.trigger !== '') {
+      items(wrapInline(`    ${theme.muted('Trigger:')} ${rule_.trigger}`, width - 2));
+    }
+    lines.push('');
   }
 
-  lines.push('', theme.bright('PRESERVATION RULES'), rule(Math.min(width, 80)));
-  for (const rule of retrieval.preservationRules) {
-    const weight = rule.priority !== undefined ? ` · weight ${rule.priority}` : '';
-    lines.push(`  ${theme.bright(rule.title)} (${rule.slug ?? rule._id})${weight}`);
-    if (rule.whatToPreserve !== undefined)
-      lines.push(`    Preserve: ${wrap(rule.whatToPreserve, width - 4)}`);
-    if (rule.whatMustNotChange !== undefined) {
-      lines.push(`    Must not change: ${wrap(rule.whatMustNotChange, width - 4)}`);
+  if (retrieval.preservationRules.length > 0) {
+    lines.push(theme.bright('PRESERVATION RULES'), rule(Math.min(width, 80)), '');
+    for (const rule_ of retrieval.preservationRules) {
+      const weight =
+        rule_.priority !== undefined ? `  ${theme.muted(`weight ${rule_.priority}`)}` : '';
+      lines.push(`  ${theme.accent(sym.pointer)} ${theme.bright(rule_.title)}${weight}`);
+      if (rule_.whatToPreserve !== undefined && rule_.whatToPreserve !== '') {
+        items(wrapInline(`    ${rule_.whatToPreserve}`, width - 2));
+      }
+      if (rule_.whatMustNotChange !== undefined && rule_.whatMustNotChange !== '') {
+        items(
+          wrapInline(
+            `    ${theme.muted('Must not change:')} ${rule_.whatMustNotChange}`,
+            width - 2,
+          ),
+        );
+      }
+      lines.push('');
     }
   }
 
   if (conflicts.length > 0) {
-    lines.push('', theme.bright('CONFLICTS'), rule(Math.min(width, 80)));
+    lines.push(theme.bright('CONFLICTS'), rule(Math.min(width, 80)), '');
     for (const conflict of conflicts) {
       lines.push(`  ${theme.warning(sym.warn)} ${conflict.detail}`);
     }
+    lines.push('');
   }
 
   if (retrieval.sources.length > 0) {
-    lines.push('', theme.bright('SOURCES'), rule(Math.min(width, 80)));
+    lines.push(theme.bright('SOURCES'), rule(Math.min(width, 80)), '');
     for (const source of retrieval.sources) {
       const name = source.name ?? source.title;
-      lines.push(`  • ${name}${source.url !== undefined ? ` — ${source.url}` : ''}`);
+      lines.push(`  ${theme.accent(sym.pointer)} ${theme.bright(name)}`);
+      if (source.url !== undefined && source.url !== '') {
+        lines.push(`    ${theme.muted(source.url)}`);
+      }
     }
-  }
-
-  if (retrieval.userDecisions.length > 0) {
-    lines.push('', theme.bright('USER DECISIONS'), rule(Math.min(width, 80)));
-    for (const decision of retrieval.userDecisions) {
-      lines.push(
-        `  • ${decision.title}${decision.decision !== undefined ? `: ${decision.decision}` : ''}`,
-      );
-    }
+    lines.push('');
   }
 
   lines.push('');
   return lines;
+}
+
+/** Wrap a line to the page width, returning the split rows (never empty). */
+function wrapInline(text: string, width: number): string[] {
+  const wrapped = wrap(text, width);
+  return wrapped === '' ? [] : wrapped.split('\n');
 }

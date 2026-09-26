@@ -110,7 +110,31 @@ and conflicts preserved.
   restrained single-row items with exactly **one** indicator (`›` accents the
   active item; inactive items keep the same indent so the column never jumps),
   and `SelectOptions.escLabel` names Esc as `back` (wizard steps) or `exit`
-  (home screen).
+  (home screen). Below the list a **live detail pane** shows the full
+  description of the active choice (re-rendered on every arrow), fed from
+  `Choice.description` — the item row itself stays a single clean line.
+- **One live status line, never a background screen dump.** The former static
+  "Connecting to the Context MCP…" line and the multi-stage processing screen
+  are replaced by a single-line live status (`UNSCRIPT · SANITY · <step>
+<elapsed>s`) painted at row 1 by `liveStatus()` in `src/cli/ui/live.ts`
+  (shared prefix `SANITY`, or `DOCTOR` for the environment checks): step
+  labels change only at real phase boundaries (`preflightContextMcp` fires
+  `onStep` after each completed phase; `runTransformation` fires `onStage` at
+  retrieving/reworking/checking; doctor fires a step as each check completes)
+  and the time shown is a single real elapsed counter — one number, never
+  duplicated. After the humanize selections finish, the rework collapses into
+  that one line and then only the result page remains. `knowledge` has **no
+  selection menus** — it inspects the first content type/tone/level straight
+  from Sanity and goes directly to its page (writing patterns, transformation
+  rules, preservation rules, and sources, with a compact "Inspecting …"
+  summary line).
+- **Every interactive screen detaches its own listeners on finish.** The
+  menu (`promptSelect`), the overlay gate (`promptAnyKey`), and the pager
+  (`scrollablePage`) all remove their `keypress` / `SIGINT` / `close` /
+  `resize` listeners in `cleanup()` before closing — repeated screens in one
+  session never accumulate listeners (no `MaxListenersExceededWarning`).
+- `promptMultiline` renders its footer as the hint rows only — the old
+  right-side `INPUT` stage tag is gone.
 - Moving into a page (humanize/transform/knowledge/doctor/help/version) clears
   the screen again and renders that page alone — no logo, no leftover menu, no
   stacked content. Exiting clears once more and prints `Bye.` / `Interrupted.`

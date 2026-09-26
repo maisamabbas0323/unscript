@@ -10,7 +10,6 @@ import {
   updateRegion,
   fitWidth,
   hintsHtml,
-  tagRule,
 } from './screen.js';
 import { screenHeader } from './banner.js';
 import {
@@ -185,8 +184,6 @@ const CONTROL_KEYS = new Set([
   'insert',
 ]);
 
-const TAG = 'INPUT';
-
 export function promptMultiline(options: TextPromptOptions): Promise<TextResult> {
   return new Promise((resolve) => {
     let state: EditState = editingState();
@@ -221,18 +218,14 @@ export function promptMultiline(options: TextPromptOptions): Promise<TextResult>
     /** Physical rows the editor may occupy without reaching the footer. */
     const editorRows = (): number => {
       const width = Math.max(20, Math.min(60, realWidth()));
-      const footerRows = 1 + 1 + hintsHtml(hintGroups(), width).length;
+      const footerRows = 1 + hintsHtml(hintGroups(), width).length;
       const usable = realHeight() - regionTop() - footerRows - 1;
       return Math.max(1, Math.min(usable, 12));
     };
 
     const footer = (): string[] => {
       const width = realWidth();
-      return [
-        '',
-        tagRule(width, TAG),
-        ...hintsHtml(hintGroups(), width).map((line) => theme.muted(line)),
-      ];
+      return ['', ...hintsHtml(hintGroups(), width).map((line) => theme.muted(line))];
     };
 
     const cursorEscape = (layout: { cursor: { row: number; col: number } }): string => {

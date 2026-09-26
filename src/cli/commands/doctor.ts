@@ -8,6 +8,8 @@ import {
 } from '../../utils/package-info.js';
 import { theme } from '../ui/theme.js';
 import { pageHeader, rule } from '../ui/banner.js';
+import { clearScreen } from '../ui/terminal.js';
+import { liveStatus } from '../ui/live.js';
 import type { CheckResult } from '../../types/config.js';
 import { loadRuntimeConfig } from '../../config/env.js';
 import { createContextMcp, REQUIRED_TOOLS } from '../../mcp/contextMcp.js';
@@ -228,14 +230,19 @@ async function checkGemini(): Promise<CheckResult> {
   }
 }
 
-async function runChecks(): Promise<CheckResult[]> {
+async function runChecks(onStep?: (label: string) => void): Promise<CheckResult[]> {
+  const checked = async (label: string, promise: Promise<CheckResult>): Promise<CheckResult> => {
+    const result = await promise;
+    onStep?.(label);
+    return result;
+  };
   return Promise.all([
-    checkNodeVersion(),
-    checkNpm(),
-    Promise.resolve(checkConfiguration()),
-    Promise.resolve(checkTerminal()),
-    checkContextMcp(),
-    checkGemini(),
+    checked('Node.js checked', checkNodeVersion()),
+    checked('npm checked', checkNpm()),
+    checked('configuration checked', Promise.resolve(checkConfiguration())),
+    checked('terminal checked', Promise.resolve(checkTerminal())),
+    checked('Context MCP live check', checkContextMcp()),
+    checked('Gemini live check', checkGemini()),
   ]);
 }
 
@@ -243,17 +250,27 @@ export async function runDoctor(debug: boolean): Promise<number> {
   const interactive = process.stdout.isTTY === true;
   const start = Date.now();
 
+  let checks: CheckResult[];
   if (interactive) {
-    process.stdout.write(`${theme.muted('Checking your environment…')}\n`);
+    // Same live status style as the Context MCP connect line: one line,
+    // real step names as each check completes, one real elapsed timer.
+    clearScreen();
+    const live = liveStatus(1, 'DOCTOR');
+    live.setStep('checking your environment');
+    try {
+      checks = await runChecks((label) => live.setStep(label));
+    } catch (error) {
+      live.stop();
+      throw error;
+    }
+    live.done(`done in ${Date.now() - start}ms`);
+    live.stop();
+    clearScreen();
+  } else {
+    checks = await runChecks();
   }
-
-  const checks = await runChecks();
+  if (debug) debugLog(`doctor ran ${checks.length} checks in ${Date.now() - start}ms`);
   const elapsed = Date.now() - start;
-  if (debug) debugLog(`doctor ran ${checks.length} checks in ${elapsed}ms`);
-
-  if (interactive) {
-    process.stdout.write('\u001b[1A\u001b[K');
-  }
 
   const { version } = readPackageJson();
   const width = Math.max(40, Math.min(process.stdout.columns ?? 80, 100));

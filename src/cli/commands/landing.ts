@@ -23,12 +23,35 @@ import { runTransform, runKnowledge } from './transform.js';
 type LandingChoice = 'humanize' | 'knowledge' | 'doctor' | 'help' | 'version' | 'exit';
 
 const CHOICES: Choice<LandingChoice>[] = [
-  { id: 'humanize', label: 'Humanize text' },
-  { id: 'knowledge', label: 'Inspect knowledge' },
-  { id: 'doctor', label: 'Inspect environment' },
-  { id: 'help', label: 'Help' },
-  { id: 'version', label: 'Version' },
-  { id: 'exit', label: 'Exit' },
+  {
+    id: 'humanize',
+    label: 'Humanize text',
+    description:
+      'Rework your writing against the Sanity knowledge base — pick a content type, tone, and humanization level, then read the result with full provenance.',
+  },
+  {
+    id: 'knowledge',
+    label: 'Inspect knowledge',
+    description:
+      'See the writing rules, patterns, sources, and user decisions the knowledge base holds for your content.',
+  },
+  {
+    id: 'doctor',
+    label: 'Inspect environment',
+    description:
+      'Run real local checks and, when credentials are configured, clearly labeled live checks of the Context MCP and Gemini.',
+  },
+  {
+    id: 'help',
+    label: 'Help',
+    description: 'List commands, exit codes, and configuration steps for Unscript.',
+  },
+  {
+    id: 'version',
+    label: 'Version',
+    description: 'Show the installed Unscript version and runtime details.',
+  },
+  { id: 'exit', label: 'Exit', description: 'Leave the interactive home screen.' },
 ];
 
 /**

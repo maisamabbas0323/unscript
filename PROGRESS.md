@@ -470,3 +470,92 @@ self-gate, plus a double-prompt with the landing gate.
 | pty: landing → Inspect knowledge → pager                 | page shows, scrolls, Enter returns to menu                               |
 | pty: Esc at wizard menu                                  | "Cancelled." + overlay gate, Enter → menu                                |
 | pty: landing → doctor → gate                             | doctor checks visible, gate pinned, Enter → menu                         |
+
+## Live UX polish (Step 5.7) — live status line, fascinating menus, direct knowledge
+
+### What changed
+
+- **Live "Connecting…" line, everywhere.** The static
+  "Connecting to the Context MCP…" line in both `humanize` and `knowledge` is
+  now a single-line live status (`UNSCRIPT · SANITY · <step> <per-step s>`),
+  painted at row 1 by `liveStatus()` in `transform.ts`. Step labels change only
+  at real phase boundaries: `preflightContextMcp` gained an optional `onStep`
+  callback (fired _after_ `initialize` / `initial_context` / `tools/list` each
+  actually complete) and `runTransformation` gained an optional `onStage`
+  callback at retrieving/reworking/checking. The time shown is a real per-step
+  stopwatch — no spinners, no fabricated progress.
+- **No background screen dump: only the result remains.** The multi-line
+  processing screen (`renderProcessingScreen`, `RUN_STAGES`, `stageLine`) is
+  gone. After the three humanize selections the rework collapses into the one
+  live line, which is replaced by the result pager when done.
+- **Selection menus got a live detail pane.** `promptSelect` now renders the
+  full description of the active choice below the list (rule-joined heading +
+  wrapped body, re-rendered on every arrow, height-budgeted
+  `Choice.description`). The humanize content type/tone/level items no longer
+  clamp their description to 64 chars on the row; the landing home menu also
+  has descriptions, so it benefits too. The wizard subtitles carry a
+  `· step N of 3` breadcrumb.
+- **`knowledge` is direct — like version.** It no longer shows the three
+  selection menus; it fetches the option lists and inspects the first content
+  type, tone, and level (deterministic, real retrieved data) straight onto its
+  pager page.
+- **The editor footer's right-side `INPUT` tag is removed** (`tagRule` row and
+  `TAG` constant dropped from `input.ts`; the footer is the hint rows only).
+
+### Verified
+
+| Check                                                          | Result                                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `npx prettier --check .` | pass                                                              |
+| `npm test` (build-first integration)                           | **167/167 pass** (18 files)                                       |
+| pty 80×24: landing detail pane                                 | Humanize description visible for active choice                    |
+| pty 80×24: editor                                              | no `INPUT` word anywhere in the frame                             |
+| pty 80×24: live connect line                                   | `UNSCRIPT · SANITY · connecting to the Context MCP …` renders     |
+| pty 80×24: CONTENT/TONE/LEVEL menus                            | detail pane shows full live description; Enter selects            |
+| pty 80×24: rework phase                                        | single `UNSCRIPT · SANITY · Retrieving relevant guidance …s` line |
+| pty 80×24: result page                                         | REWORKED/ORIGINAL + DONE + pinned footer returned                 |
+| pty 80×24: landing → Inspect knowledge                         | opens directly on `UNSCRIPT / KNOWLEDGE` — no selection menus     |
+
+## Live UX polish II (Step 5.8) — single timer, beautiful knowledge, no listener leaks
+
+### What changed
+
+- **One elapsed number, never two.** The old live status showed a per-step
+  stopwatch next to the total (`0.2s · 12.3s`); every flow now shows a single
+  real elapsed total since the line started. `liveStatus()` moved to a shared
+  module `src/cli/ui/live.ts` (prefix `SANITY` for connect/rework, `DOCTOR`
+  for the environment checks) — one stopwatch, one number.
+- **`knowledge` page is now the writing-rules document.** The bulky
+  CONTENT TYPE / HUMANIZATION LEVEL / TONE description dumps are gone. The
+  page opens with a compact one-line `Inspecting  Article · Clear · Custom`
+  summary, then the retrieved content only: WRITING PATTERNS (severity
+  badge, pattern + when-to-change), TRANSFORMATION RULES (priority badge,
+  instruction + trigger), PRESERVATION RULES (weight badge, preserve +
+  must-not-change), CONFLICTS (when real), and SOURCES (name + url on
+  wrapped dim lines). Everything is wrapped to the page width.
+- **Result page KNOWLEDGE APPLIED is grouped and attractive.** A one-line
+  `Selection  Article · Clear · Custom`, then rules and patterns as separate
+  labeled groups with source tags (`Transformation rules`, `Patterns`), and
+  the preservation count on a green check line.
+- **`doctor` runs under the same live status line as connect.** While checks
+  run, `UNSCRIPT · DOCTOR · <step> <elapsed>s` shows real step names as each
+  finish (`Node.js checked`, `npm checked`, …, `Gemini live check`), then
+  clears to the doctor page — which returns through the landing's
+  `Press Enter or Esc to return` overlay gate. `runChecks(onStep)` fires the
+  step label only when a check actually completes (non-TTY path unchanged).
+- **Listener leak fixed (the `MaxListenersExceededWarning`).** Every
+  interactive screen — `promptSelect`, `promptAnyKey`, `scrollablePage` —
+  now removes its own `keypress` / `SIGINT` / `close` (stdin) and `resize`
+  (stdout) listeners in a shared `cleanup()` before closing, so repeated
+  screens in one session never accumulate listeners.
+
+### Verified
+
+| Check                                                          | Result                                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `npx prettier --check .` | pass                                                              |
+| `npm test` (build-first integration)                           | pass (full suite)                                                 |
+| live status during connect + rework                            | single `<elapsed>s` — no duplicated seconds                       |
+| `knowledge` page                                               | "Inspecting …" summary + patterns/rules/preservation/sources only |
+| repeated screens in one session                                | no `MaxListenersExceededWarning`                                  |
+| `doctor` env line                                              | `UNSCRIPT · DOCTOR · ` live line, then doctor page + return gate  |

@@ -33,18 +33,31 @@ export function connectRuntime(config: RuntimeConfig): RuntimeConnection {
  * any `groq_query` — and then `tools/list`. A Knowledge Base-mode endpoint
  * surfaces a clear configuration error.
  */
-export async function preflightContextMcp(mcp: ContextMcp): Promise<void> {
+/**
+ * Real phases of the Context MCP session setup, in protocol order. Fired
+ * via `onStep` only after each phase actually completes, so the interactive
+ * progress line never implies work that has not happened yet.
+ */
+export type PreflightStep = 'initialize' | 'initial-context' | 'tools-list';
+
+export async function preflightContextMcp(
+  mcp: ContextMcp,
+  onStep?: (step: PreflightStep) => void,
+): Promise<void> {
   await mcp.initialize();
+  onStep?.('initialize');
 
   // Context MCP: "Always call this first." Runs before any groq_query.
   let initialContextError: unknown = null;
   try {
     await mcp.initialContext();
+    onStep?.('initial-context');
   } catch (error) {
     initialContextError = error;
   }
 
   const tools = await mcp.listTools();
+  onStep?.('tools-list');
   const present = new Set(tools.map((tool) => tool.name));
   const missing = REQUIRED_TOOLS.filter((name) => !present.has(name));
   if (missing.length > 0) {

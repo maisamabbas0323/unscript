@@ -68,15 +68,7 @@ export function scrollablePage(lines: string[]): Promise<{ interrupted: boolean 
       paint();
     };
 
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
-      process.stdout.off('resize', paint);
-      showCursor();
-      rl.close();
-    };
-
-    process.stdin.on('keypress', (_str: string | undefined, key: Key | undefined) => {
+    const onKeypress = (_str: string | undefined, key: Key | undefined): void => {
       if (finished || key === undefined) return;
       if (key.name === 'up') jump(top - 1);
       else if (key.name === 'down') jump(top + 1);
@@ -88,18 +80,37 @@ export function scrollablePage(lines: string[]): Promise<{ interrupted: boolean 
         finish();
         resolve({ interrupted: false });
       }
-    });
+    };
 
-    process.stdin.on('SIGINT', () => {
+    const onSigint = (): void => {
       if (finished) return;
       finish();
       resolve({ interrupted: true });
-    });
+    };
 
-    process.stdin.on('close', () => {
+    const onClose = (): void => {
       if (!finished) resolve({ interrupted: false });
-    });
+    };
 
+    /** Detach every listener this screen added (no leaks across the session). */
+    const cleanup = (): void => {
+      process.stdin.off('keypress', onKeypress);
+      process.stdin.off('SIGINT', onSigint);
+      process.stdin.off('close', onClose);
+      process.stdout.off('resize', paint);
+    };
+
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      showCursor();
+      rl.close();
+    };
+
+    process.stdin.on('keypress', onKeypress);
+    process.stdin.on('SIGINT', onSigint);
+    process.stdin.on('close', onClose);
     process.stdout.on('resize', () => {
       if (!finished) paint();
     });

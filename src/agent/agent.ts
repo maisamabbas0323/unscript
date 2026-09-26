@@ -84,11 +84,16 @@ function appliedSummary(
 
 /**
  * Run a full transformation against real services. Throws typed errors
- * with actionable hints; never returns fabricated data.
+ * with actionable hints; never returns fabricated data. The optional
+ * `onStage` callback fires at each real phase boundary so callers can
+ * render live progress that maps to actual work.
  */
+export type TransformationStage = 'retrieving' | 'reworking' | 'checking';
+
 export async function runTransformation(
   deps: AgentDeps,
   request: TransformRequest,
+  onStage?: (stage: TransformationStage) => void,
 ): Promise<TransformationResult> {
   const startedAt = Date.now();
   const retrievalRequest: RetrievalRequest = {
@@ -98,6 +103,7 @@ export async function runTransformation(
   };
 
   debugLog('retrieving knowledge from Context MCP', retrievalRequest);
+  onStage?.('retrieving');
   const retrieval = await retrieveKnowledge(deps.mcp, retrievalRequest);
   const context = assembleAgentContext(retrievalRequest, retrieval);
 
@@ -117,8 +123,10 @@ export async function runTransformation(
   );
 
   const systemInstruction = buildSystemInstruction(context);
+  onStage?.('reworking');
   const payload = await callTransformation(deps.gemini, systemInstruction, request.text);
 
+  onStage?.('checking');
   const preservation = validatePreservation(request.text, payload.transformedText);
   debugLog(
     `preservation: checked=${preservation.checked} changed=${preservation.changedProtectedItems.length}`,
