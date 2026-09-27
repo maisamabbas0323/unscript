@@ -8,6 +8,7 @@ import { runVersionPage, runVersionShort } from './commands/version.js';
 import { runDoctor } from './commands/doctor.js';
 import { runLanding } from './commands/landing.js';
 import { runPlanned } from './commands/planned.js';
+import { runConfig } from './commands/config.js';
 import { runTransform, runKnowledge } from './commands/transform.js';
 
 /**
@@ -66,6 +67,8 @@ async function main(): Promise<number> {
       return await runTransform(debug);
     case 'knowledge':
       return await runKnowledge(debug);
+    case 'config':
+      return await runConfig(debug);
     case 'landing':
       return await runLanding(debug);
     case 'planned':

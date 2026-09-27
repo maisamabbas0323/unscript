@@ -13,7 +13,10 @@ Knowledge Base through a hosted **Sanity Context MCP**, transforms text with
   would influence a transformation.
 - `unscript doctor` — local checks plus live service checks when credentials
   are configured (Context MCP + Gemini probes are labeled as live checks).
-- `file` and `config` remain recognized but not implemented (exit 1, honest).
+- `unscript config` — honest local configuration status page (no network,
+  exit 0): reports exactly which runtime variables are set (redacted labels
+  only) and prints setup guidance when something is missing.
+- `file` remains recognized but not implemented (exit 1, honest).
 
 Nothing is fabricated: if `SANITY_CONTEXT_MCP_URL`, `SANITY_ORGANIZATION_TOKEN`,
 or `GEMINI_API_KEY` are missing, the transform flow fails with setup
@@ -66,15 +69,16 @@ unscript --help
 
 ### Commands
 
-| Command                | Description                                              |
-| ---------------------- | -------------------------------------------------------- |
-| `unscript`             | Interactive home screen                                  |
-| `unscript humanize`    | Transform text (content type → tone → level → transform) |
-| `unscript knowledge`   | Inspect the Sanity knowledge retrieved for a request     |
-| `unscript doctor`      | Local check + live service checks when configured        |
-| `unscript help`        | Show grouped help (also `-h` / `--help`)                 |
-| `unscript version`     | Show a version page (also `-v` / `--version`)            |
-| `unscript file/config` | Recognized, not implemented (exit 1)                     |
+| Command              | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `unscript`           | Interactive home screen                                  |
+| `unscript humanize`  | Transform text (content type → tone → level → transform) |
+| `unscript knowledge` | Inspect the Sanity knowledge retrieved for a request     |
+| `unscript doctor`    | Local check + live service checks when configured        |
+| `unscript help`      | Show grouped help (also `-h` / `--help`)                 |
+| `unscript version`   | Show a version page (also `-v` / `--version`)            |
+| `unscript config`    | Local config status (no network, exit 0)                 |
+| `unscript file`      | Recognized, not implemented (exit 1)                     |
 
 The home screen is keyboard-navigated: `↑ ↓` move, `Enter` selects, `Esc`
 exits, `Ctrl+C` interrupts.

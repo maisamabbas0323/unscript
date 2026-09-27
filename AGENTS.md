@@ -4,7 +4,7 @@ Unscript: a terminal-based writing transformation agent. The runtime agent
 layer (Step 5) is built: a TypeScript CLI that retrieves writing rules from a
 Sanity Knowledge Base through the hosted **Sanity Context MCP**, transforms
 text with **Gemini**, and validates the result deterministically. Still
-planned: `file` and `config` commands.
+planned: the `file` command.
 
 ## Hard constraints (do not violate)
 
@@ -20,7 +20,8 @@ planned: `file` and `config` commands.
 - **Tell the truth in output**: `doctor` runs real local checks and, when
   credentials are configured, clearly labeled live checks; `--help`, the home
   screen, and error pages must not imply unimplemented features exist. `file`
-  and `config` are recognized but exit 1 with "not implemented yet".
+  is recognized but exits 1 with "not implemented yet"; `config` prints real
+  local status.
 - **Exit codes**: `0` success, `1` operational, `2` usage, `130` Ctrl+C.
 
 ## Commands
@@ -48,7 +49,7 @@ skip or fail integration coverage.
 - Entry: `src/cli/index.ts` (shebang, bin `dist/cli/index.js`). Arg parsing in
   `src/cli/args.ts`; commands under `src/cli/commands/` (`help`, `version`,
   `doctor`, `landing`, `planned`, `transform` — which hosts both `humanize` and
-  `knowledge`).
+  `knowledge` — and `config`).
 - UI layer: `src/cli/ui/` — `theme.ts` (semantic palette + symbols), `banner.ts`
   (the red shadow-style "UNSCRIPT" logo + branded wordmark fallback, page headers), `terminal.ts` (frame width/cursor
   helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),

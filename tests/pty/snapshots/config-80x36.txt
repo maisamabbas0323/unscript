@@ -1,0 +1,33 @@
+
+UNSCRIPT / CONFIG
+────────────────────────────────────────────────────────────────────────────────
+
+  ✓ PASS  .env file     not found — shell environment values still apply
+  ↳ Copy .env.example to .env to configure the runtime.
+  ! WARN  MCP URL       SANITY_CONTEXT_MCP_URL unset
+  ↳ Set the hosted Context MCP endpoint URL in .env (see .env.example).
+  ! WARN  MCP token     SANITY_ORGANIZATION_TOKEN unset
+  ↳ Set an organization API token with Context Viewer permission.
+  ! WARN  Gemini key    GEMINI_API_KEY unset
+  ↳ Set a Google AI Studio API key in your .env file.
+  ✓ PASS  Debug         UNSCRIPT_DEBUG off
+
+────────────────────────────────────────────────────────────────────────────────
+
+  ! Setup needed: context-mcp, gemini
+
+Context MCP is not configured.
+Create a Context MCP endpoint in the Sanity Context app (GROQ mode),
+then set:
+  SANITY_CONTEXT_MCP_URL  the hosted Context MCP endpoint URL
+                          https://api.sanity.io/v1/context/organizations/
+                          <org-id>/mcp/<endpoint-name>
+  SANITY_ORGANIZATION_TOKEN organization API token with Context Viewer
+  permission
+
+Gemini is not configured.
+Set:
+  GEMINI_API_KEY          Google AI Studio API key
+
+Create a `.env` file from `.env.example` with these values and retry.
+  unscript v0.1.0 · local status, no network

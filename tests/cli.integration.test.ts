@@ -146,4 +146,54 @@ describe.skipIf(!HAS_BUILD)('unscript CLI (built)', () => {
     const [code] = await once(child, 'close');
     expect(code).toBe(0);
   }, 90_000);
+
+  /** Spawn the CLI with a specific environment; returns stdout+stderr. */
+  function spawnCli(args: string[], env: NodeJS.ProcessEnv): Promise<SpawnResult> {
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, [BIN, ...args], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env,
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout!.on('data', (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr!.on('data', (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+    });
+  }
+
+  it('reports local config status without a terminal or network', async () => {
+    const result = await spawnCli(['config'], {
+      ...process.env,
+      SANITY_CONTEXT_MCP_URL: '',
+      SANITY_ORGANIZATION_TOKEN: '',
+      GEMINI_API_KEY: '',
+    });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('UNSCRIPT / CONFIG');
+    expect(result.stdout).toContain('SANITY_CONTEXT_MCP_URL unset');
+    expect(result.stdout).toContain('SANITY_ORGANIZATION_TOKEN unset');
+    expect(result.stdout).toContain('GEMINI_API_KEY unset');
+    expect(result.stdout).toContain('Setup needed');
+  }, 90_000);
+
+  it('config shows redacted labels and never prints configured secrets', async () => {
+    const result = await spawnCli(['config'], {
+      ...process.env,
+      SANITY_CONTEXT_MCP_URL: 'https://api.sanity.io/v1/context/organizations/org/mcp/main',
+      SANITY_ORGANIZATION_TOKEN: 'sk-org-super-secret-1234',
+      GEMINI_API_KEY: 'AIza-alpha-beta-9876',
+    });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Runtime ready');
+    expect(result.stdout).toContain('sk-o');
+    expect(result.stdout).toContain('AIza');
+    const all = result.stdout + result.stderr;
+    expect(all).not.toContain('super-secret');
+    expect(all).not.toContain('alpha-beta');
+  }, 90_000);
 });

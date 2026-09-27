@@ -36,6 +36,7 @@ export async function runHelp(): Promise<number> {
       ['unscript', 'Open the Unscript home screen'],
       ['unscript humanize', 'Transform text (interactive flow)'],
       ['unscript knowledge', 'Inspect retrieved Sanity knowledge'],
+      ['unscript config', 'Show local config status (no network)'],
       ['unscript doctor', 'Check your environment'],
       ['unscript help', 'Show this help'],
       ['unscript version', 'Show the installed version'],

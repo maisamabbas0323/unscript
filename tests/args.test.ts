@@ -62,12 +62,16 @@ describe('parseArgs', () => {
     });
   });
 
+  it('parses config as a real command', () => {
+    expect(parseArgs(['config'])).toEqual({
+      parsed: { command: 'config', debug: false, viaFlag: false },
+    });
+  });
+
   it('recognizes planned future commands', () => {
-    for (const word of ['file', 'config']) {
-      expect(parseArgs([word])).toEqual({
-        parsed: { command: 'planned', debug: false, viaFlag: false, word },
-      });
-    }
+    expect(parseArgs(['file'])).toEqual({
+      parsed: { command: 'planned', debug: false, viaFlag: false, word: 'file' },
+    });
   });
 
   it('rejects unknown commands', () => {

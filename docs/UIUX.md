@@ -9,7 +9,8 @@ plus structural invariants) and the unit suite.
 
 - Every string implies exactly what exists. Nothing on the home screen,
   help pages, or error pages may suggest an unimplemented feature.
-  `file`/`config` are recognized but report "not implemented yet" (exit 1).
+  `file` reports "not implemented yet" (exit 1); `config` is a real local
+  status page (exit 0) whose rows and hints describe exactly what is set.
 - Status is never color-only: PASS / WARN / FAIL carry text labels, so
   NO_COLOR readers get the same information.
 - Timers show real elapsed time only; step labels change only at real

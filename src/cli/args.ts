@@ -7,13 +7,12 @@
  * flags remain as aliases: `-h/--help`, `-v/--version`, `--debug`.
  *
  * `humanize` is the friendly name for the interactive transformation
- * flow (`transform`). Forward-declared commands (`file`, `config`) are
- * recognized as planned so the surface stays stable — the feature itself
- * is not implemented.
+ * flow (`transform`). The `file` command is forward-declared as planned
+ * so the surface stays stable — the feature itself is not implemented.
  */
 
 export type CommandId =
-  'help' | 'version' | 'doctor' | 'landing' | 'planned' | 'transform' | 'knowledge';
+  'help' | 'version' | 'doctor' | 'landing' | 'planned' | 'transform' | 'knowledge' | 'config';
 
 export interface ParsedArgs {
   command: CommandId;
@@ -29,8 +28,16 @@ export type ParseResult = { parsed: ParsedArgs } | { error: string };
 const HELP_FLAGS = new Set(['-h', '--help']);
 const VERSION_FLAGS = new Set(['-v', '--version']);
 const DEBUG_FLAGS = new Set(['--debug']);
-const COMMANDS = new Set(['doctor', 'help', 'version', 'transform', 'knowledge', 'humanize']);
-const PLANNED = new Set(['file', 'config']);
+const COMMANDS = new Set([
+  'doctor',
+  'help',
+  'version',
+  'transform',
+  'knowledge',
+  'humanize',
+  'config',
+]);
+const PLANNED = new Set(['file']);
 
 export function parseArgs(argv: string[]): ParseResult {
   let debug = false;
@@ -67,7 +74,7 @@ export function parseArgs(argv: string[]): ParseResult {
     const command: CommandId =
       word === 'humanize'
         ? 'transform'
-        : (word as 'doctor' | 'help' | 'version' | 'transform' | 'knowledge');
+        : (word as 'doctor' | 'help' | 'version' | 'transform' | 'knowledge' | 'config');
     return { parsed: { command, debug, viaFlag: false } };
   }
   if (PLANNED.has(word)) {

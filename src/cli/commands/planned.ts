@@ -3,8 +3,8 @@ import { pageHeader } from '../ui/banner.js';
 import { EXIT_ERROR } from '../../core/errors.js';
 
 /**
- * Forward-declared commands (`unscript file`, `unscript config`) are
- * recognized so the CLI surface is stable, but they are not implemented.
+ * Forward-declared command (`unscript file`) is recognized so the CLI
+ * surface stays stable, but it is not implemented.
  * Report that honestly and exit non-zero.
  */
 export async function runPlanned(word: string): Promise<number> {

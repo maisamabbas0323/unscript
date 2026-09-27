@@ -681,3 +681,51 @@ self-gate, plus a double-prompt with the landing gate.
 | `npm test` (build-first integration)                           | pass (full suite)                                                             |
 | `npm run uicheck` (golden + live, 100×34 flagship)             | pass — snapshots re-recorded, live aside-render asserted                      |
 | pty 100×34 / 80×28 / 80×24                                     | 6-item menu / 1–4 of 6 / 6-item menu — no overflow, no indicator on logo tier |
+
+## `unscript config` command (Step 5.12)
+
+### What changed
+
+- **`config` is a real command, not a placeholder.** `src/cli/args.ts` moved
+  `config` out of `PLANNED` into `COMMANDS` (only `file` stays forward-
+  declared); `src/cli/index.ts` dispatches `case 'config'` to the new
+  `src/cli/commands/config.ts`.
+- **Pure, tested row builder.** `buildConfigRows(...) → CheckResult[]` renders
+  one labeled row per setting — `.env file`, `MCP URL`, `MCP token`,
+  `Gemini key`, `Debug` — reusing `renderCheck`, `pageHeader`, and
+  `runtimeSetupMessage`. It is verified by `tests/config-command.test.ts`:
+  unset → WARN + setup hint; configured → PASS with `tokenLabel`/`apiKeyLabel`
+  only (raw secrets never in `renderCheck` output); `.env` read error → FAIL;
+  invalid `UNSCRIPT_DEBUG` → WARN.
+- **Honest local status, exit 0 always.** The page is a purely local read (no
+  network, no service calls), works in TTY and non-TTY alike, and exits 0 even
+  when variables are missing — a status report with actionable guidance
+  (`! Setup needed: context-mcp, gemini` + `runtimeSetupMessage`), not an
+  error. Missing values are WARN rows (never color-only), and secrets appear
+  only as redacted labels (`sk-o••••••••1234`).
+- **Bounded output.** Every line fits the page width: `wrapIndented` preserves
+  `runtimeSetupMessage`'s two-column alignment, and `hardSplitLongWord`
+  breaks long tokens (e.g. the full endpoint URL) at `/` path boundaries
+  instead of mid-token, so the page renders cleanly at 80 columns and the pty
+  snapshot can assert no overflow.
+- **Hermetic pty golden snapshot.** `tests/pty/run.py` gained
+  `run_config_snapshot`: it spawns the built CLI with `word="config"` from a
+  `.env`-free cwd (`tests/pty`), scrubs the runtime credentials plus
+  `UNSCRIPT_DEBUG` (extending the SCRUB dict), and checks the rendered frame
+  against `config-80x36.txt` — locked content + exit 0. `spawn_cli` gained
+  `word` and `cwd` parameters; existing landing snapshots are unchanged.
+- **Surface honesty updated.** `unscript config` now appears in
+  `help.ts` GETTING STARTED and README's command table; README, AGENTS.md
+  (`file` only remains planned), and `docs/UIUX.md` no longer claim config is
+  unimplemented.
+
+### Verified
+
+| Check                                            | Result                                          |
+| ------------------------------------------------ | ----------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `prettier` | pass                                            |
+| `npm test` (build-first integration)             | pass (incl. `config` unit + integration cases)  |
+| `npm run uicheck` (golden + live)                | pass — 5 golden snapshots incl. config-80x36    |
+| integration: unset → WARN + Setup needed, exit 0 | pass                                            |
+| integration: configured → redacted labels only   | pass (no secret substrings in stdout or stderr) |
+| pty config-80x36                                 | every line ≤ 80 cols, version footer present    |

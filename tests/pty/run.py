@@ -5,11 +5,11 @@ Drives the real built CLI (`dist/cli/index.js`) on a pty at fixed
 terminal sizes, renders the final frame, and checks it against both
 committed golden snapshots and structural invariants. stdlib only.
 
-Hermetic by design: the three runtime credentials are scrubbed to empty
-strings in the child environment, so this never leaks secrets and never
-touches the network — snapshots show the honest, deterministic unset
-state. dotenv does not override existing env vars, so even a local
-`.env` cannot re-inject credentials.
+Hermetic by design: the runtime credentials (and `UNSCRIPT_DEBUG`) are
+scrubbed to empty strings in the child environment, so this never leaks
+secrets and never touches the network — snapshots show the honest,
+deterministic unset state. dotenv does not override existing env vars, so
+even a local `.env` cannot re-inject credentials.
 
 Usage:
   python3 tests/pty/run.py --check   # compare + assert (default)
@@ -40,10 +40,12 @@ SCRUB = {
     "SANITY_CONTEXT_MCP_URL": "",
     "SANITY_ORGANIZATION_TOKEN": "",
     "GEMINI_API_KEY": "",
+    "UNSCRIPT_DEBUG": "",
 }
 
 ANCHOR_LANDING = "What shall we do today?"
 ANCHOR_DOCTOR = "UNSCRIPT / DOCTOR"
+ANCHOR_CONFIG = "UNSCRIPT / CONFIG"
 
 
 def log(msg: str) -> None:
@@ -56,7 +58,11 @@ def set_size(fd: int, rows: int, cols: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
-def spawn_cli(rows: int, cols: int, nocolor: bool = False):
+def spawn_cli(rows: int, cols: int, nocolor: bool = False, word: str | None = None, cwd: Path | None = None):
+    """Fork the built CLI on a pty at the given size. `word` passes a
+    subcommand (e.g. "config" for the non-interactive config page); the
+    default is the interactive home screen. `cwd` lets a snapshot run
+    from a directory without a `.env` (hermetic config page)."""
     env_extra = dict(SCRUB)
     if nocolor:
         env_extra["NO_COLOR"] = "1"
@@ -65,8 +71,9 @@ def spawn_cli(rows: int, cols: int, nocolor: bool = False):
         os.environ["TERM"] = "xterm-256color"
         for key, value in env_extra.items():
             os.environ[key] = value
-        os.chdir(str(ROOT))
-        os.execvp("node", ["node", "dist/cli/index.js"])
+        os.chdir(str(cwd) if cwd else str(ROOT))
+        argv = ["node", str(CLI)] + ([word] if word else [])
+        os.execvp("node", argv)
     set_size(fd, rows, cols)
     return pid, fd
 
@@ -349,6 +356,72 @@ def run_landing_cases(record: bool, live: bool) -> int:
     return 1 if failed else 0
 
 
+def run_config_snapshot(record: bool) -> int:
+    """One deterministic, hermetic `config` page: scrubbed env => always
+    the unset state; asserts honest output, redaction, and exit 0."""
+    failed = False
+    case = Case("config-80x36", 36, 80, "config")
+    pid, fd = spawn_cli(case.rows, case.cols, word="config", cwd=ROOT / "tests" / "pty")
+    try:
+        data = capture(fd, ANCHOR_CONFIG)
+        text = data.decode("utf-8", "replace")
+        rows = normalize_rows(render_frame(text, case.rows, case.cols))
+        errors = []
+        if any(len(row) > case.cols for row in rows):
+            worst = max(len(row) for row in rows)
+            errors.append(f"{case.name}: row wider than {case.cols} cols (found {worst})")
+        joined = "\n".join(rows)
+        for needle in (
+            ANCHOR_CONFIG,
+            "SANITY_CONTEXT_MCP_URL unset",
+            "SANITY_ORGANIZATION_TOKEN unset",
+            "GEMINI_API_KEY unset",
+            "Setup needed",
+            "Context MCP is not configured",
+        ):
+            if needle not in joined:
+                errors.append(f"{case.name}: missing expected text {needle!r}")
+        if f"v{version_from_package()}" not in joined:
+            errors.append(f"{case.name}: version footer missing")
+        if errors:
+            failed = True
+            for err in errors:
+                log(f"FAIL {err}")
+        snap = snapshot_path(case)
+        if record:
+            snap.parent.mkdir(parents=True, exist_ok=True)
+            snap.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            log(f"recorded {snap.name}")
+        else:
+            if snap.exists():
+                want = normalize_rows(snap.read_text(encoding="utf-8").split("\n"))
+                if want != rows:
+                    failed = True
+                    diff = difflib.unified_diff(
+                        want, rows, fromfile=f"snapshot/{snap.name}", tofile="live"
+                    )
+                    log(f"FAIL {snap.name} differs from golden snapshot:")
+                    for line in list(diff)[:40]:
+                        print(f"    {line}")
+            else:
+                failed = True
+                log(f"FAIL {snap.name} missing — run `npm run uicheck:record`")
+        code = wait_exit(pid)
+        if code != 0:
+            failed = True
+            log(f"FAIL {case.name}: exit code {code!r} (want 0)")
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            pass
+    return 1 if failed else 0
+
+
 def run_live_flow() -> int:
     """One interactive session: landing -> doctor -> return -> exit. Asserts
     navigation works, the doctor page renders with its return gate, no
@@ -413,6 +486,9 @@ def main() -> int:
 
     log("recording golden snapshots" if args.record else "checking golden snapshots")
     result = run_landing_cases(args.record, args.live)
+    if result != 0:
+        return result
+    result = run_config_snapshot(args.record)
     if result != 0:
         return result
     if args.live and not args.record:
