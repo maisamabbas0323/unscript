@@ -142,20 +142,6 @@ export function moveEnd(state: EditState): EditState {
 }
 
 /**
- * Physical viewport row (0-based) at which the buffer's first visible
- * line is rendered — the editor window scrolls with the cursor.
- *
- * Kept for compatibility; `layoutEditor` derives its window directly from
- * physical row counts so that long wrapped lines can never overflow the
- * interactive region.
- */
-export function viewportTop(state: EditState, maxView: number): number {
-  if (state.lines.length <= maxView) return 0;
-  const half = Math.floor(maxView / 2);
-  return Math.max(0, Math.min(state.row - half, state.lines.length - maxView));
-}
-
-/**
  * Cell-wrap one buffer line into physical rows. Row 0 carries the
  * marker prefix; continuation rows are flush-left (a normal soft wrap).
  */

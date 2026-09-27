@@ -1,4 +1,3 @@
-import { theme, sym } from './theme.js';
 import { visibleWidth, cellWidth } from '../../utils/text.js';
 
 /**
@@ -124,11 +123,6 @@ export function fitWidth(line: string, width: number): string {
   return `${out}…`;
 }
 
-/** Small uppercase status tag, right-padded to align descriptions. */
-export function statusTag(tag: string, width = 10): string {
-  return theme.muted(tag.toUpperCase().padEnd(width));
-}
-
 /** Muted keyboard hint line, packed from atomic groups, wrapped softly. */
 export function hintsHtml(groups: string[][], width: number): string[] {
   const lines: string[] = [];
@@ -147,12 +141,4 @@ export function hintsHtml(groups: string[][], width: number): string[] {
   }
   if (current !== '') lines.push(current);
   return lines;
-}
-
-/** Bottom rule with a small uppercase stage tag (INPUT, CONTENT, …). */
-export function tagRule(width: number, tag: string): string {
-  const tagText = theme.muted(tag.toUpperCase());
-  const ruleCells = Math.max(4, width - cellWidth(tagText) - 3);
-  const line = `${theme.muted(sym.rule.repeat(Math.min(ruleCells, 80)))}  ${tagText}`;
-  return fitWidth(line, width);
 }

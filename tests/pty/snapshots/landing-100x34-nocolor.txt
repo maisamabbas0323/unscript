@@ -1,0 +1,32 @@
+
+   █    ██   █▄ ▄          ▄▄██    ▄█▄  ▄    ██ ███    ██▓  ██▒███   ▄▄▄█▄███▓
+   ██  ▓▀█▒  ██ ▀█   █  ▒ ▀   ▒   ▓ █▀ ▀█   ▓██ ▒ ██▓ ▓▐█▒ ▓██░  ██▓ ▓  ██▒ ▓▒
+  ▓██  ▒██░ ▓██  ▀█ ██▒ ░ ▓██▄    ▒▓█    ▄  ▓██ ░▄█ ▒ ▒ █▒ ▓██░ ██▓▒ ▒ ▓██░ ▒░
+  ▓▓█  ░██░ ▓██▒  ▐ ██▒   ▒   ▄█▓ ▒▒▒▄ ▄  ▒ ▒▄█▀▀█▄   ░▐ ░ ▒▄ ▄█▒▓ ▒ ░ ▓▄█▓ ░
+  ▒▒███▄▀▓  ▒██░   ▓██░ ▓███▄▄▀▒▒ ▒ ▒   ▀ ░ ░██▓ ▒██▒ ░▐█░ ▒██▒ ░  ░   ▒██▒ ░
+  ░▒▓▒ ▒ ▒  ░ ▒░   ▒ ▓  ▒ ▒▓▒ ▒ ░ ░ ░▒ ▓  ░ ░ ▒▓ ░▒▓░ ░▓   ▒▓▒░ ░  ░   ▒ ░░
+  ░░▒░ ░ ░  ░ ░░   ░ ▒░ ░ ░▒  ░ ░  ░  ▒      ░▒ ░ ▒░  ▒ ░ ░▒ ░          ░
+   ░░░ ░░     ░   ░ ░  ░  ░  ░   ░           ░░   ░   ▒ ░ ░░          ░
+     ░               ░        ░   ░ ░          ░       ░
+                                  ░
+
+                                           writing, reworked.
+────────────────────────────────────────────────────────────────────────────────
+
+  ! Context MCP unset · ! Gemini unset · v0.1.0
+
+  What would you like to do?
+
+  › Humanize text
+    Inspect knowledge
+    Inspect environment
+    Help
+    Version
+    Exit
+
+↑ ↓ · move   Enter · select   Esc · exit   Ctrl+C · interrupt
+
+── HUMANIZE TEXT ─────────────────────────────────────────────────────────────
+  Rework your writing against the Sanity knowledge base — pick a content
+  type, tone, and humanization level, then read the result with full
+  provenance.

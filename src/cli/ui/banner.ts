@@ -7,22 +7,13 @@ import { theme, sym } from './theme.js';
  *
  * The home screen carries a hand-set "UNSCRIPT" logo — a shadow-style
  * block face in red ink with white highlights (10 rows, 76 columns),
- * auto-disabled with NO_COLOR. `wordmarkLines` keeps the earlier
- * rainbow block wordmark as a fallback on narrow terminals.
+ * auto-disabled with NO_COLOR. `wordmarkLines` keeps the earlier block
+ * wordmark (now painted in the same red brand) as a fallback on narrow
+ * terminals and as the compact mid-height tier on the home screen.
  */
 
 const WORD = 'UNSCRIPT';
 const LETTER_HEIGHT = 6;
-
-/** Cycle used for the wordmark letters (cyan → blue → magenta → red → yellow → green). */
-const WORD_COLORS: Array<(text: string) => string> = [
-  colors.cyan,
-  colors.blue,
-  colors.magenta,
-  colors.red,
-  colors.yellow,
-  colors.green,
-];
 
 /** Hand-set 6x6 block letters (rows are exactly 6 columns each). */
 const LETTERS: Record<string, string[]> = {
@@ -41,17 +32,17 @@ function fullWordmarkWidth(): number {
   return WORD.length * 6 + (WORD.length - 1);
 }
 
-/** Wordmark rows, each letter painted in its own color from the cycle. */
+/**
+ * Wordmark rows, every letter painted with the brand (the logo's red
+ * ink) — one identity across the fallback and the full logo.
+ */
 function buildRows(): string[] {
   const rows: string[] = new Array<string>(LETTER_HEIGHT).fill('');
-  let letter = 0;
   for (const char of WORD) {
     const glyph = LETTERS[char]!;
-    const paint = WORD_COLORS[letter % WORD_COLORS.length]!;
     for (let i = 0; i < LETTER_HEIGHT; i++) {
-      rows[i] = `${rows[i]}${rows[i] === '' ? '' : ' '}${paint(glyph[i]!)}`;
+      rows[i] = `${rows[i]}${rows[i] === '' ? '' : ' '}${theme.brand(glyph[i]!)}`;
     }
-    letter += 1;
   }
   return rows;
 }
@@ -502,19 +493,23 @@ export interface IntroOptions {
   top?: number;
   /** Columns to indent the wordmark and tagline from the left edge. */
   left?: number;
+  /** Use the 6-row block wordmark instead of the 10-row logo (mid-height terminals). */
+  compact?: boolean;
 }
 
 /**
  * The home-screen identity block: the logo, tagline, and rule.
  * Anchored top-left with optional margins, so it pins to the top-left
- * corner of the cleared screen instead of floating centered.
+ * corner of the cleared screen instead of floating centered. Pass
+ * `compact` to render the 6-row block wordmark tier on mid-height
+ * terminals.
  */
 export function introBlock(width: number = terminalWidth(), opts: IntroOptions = {}): string[] {
-  const { top = 0, left = 0 } = opts;
+  const { top = 0, left = 0, compact = false } = opts;
   const pad = (line: string): string => `${' '.repeat(left)}${line}`;
   const lines: string[] = [];
   for (let i = 0; i < top; i++) lines.push('');
-  lines.push(...logoLines(width).map(pad));
+  lines.push(...(compact ? wordmarkLines(width) : logoLines(width)).map(pad));
   lines.push('');
   lines.push(pad(tagline(width)));
   lines.push(rule(width));

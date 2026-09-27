@@ -1,5 +1,4 @@
-import { wrap, visibleWidth } from '../../utils/text.js';
-import { theme } from './theme.js';
+import { wrap } from '../../utils/text.js';
 
 /**
  * Low-level terminal helpers for the interactive UI.
@@ -31,11 +30,6 @@ export function clearScreen(): void {
   process.stdout.write('\u001b[2J\u001b[3J\u001b[H');
 }
 
-/** Move the cursor up `lines` and clear everything below the frame. */
-export function clearFrame(lines: number): void {
-  process.stdout.write(`\u001b[${lines}A\u001b[J`);
-}
-
 /** Bound every rendered line to a width (default: the frame width), so no
  * line can wrap in the terminal. Pass `realWidth()` when a pinned identity
  * block may span more than the 60-column menu frame (e.g. the 76-column
@@ -57,23 +51,4 @@ export function frameProse(text: string, indent = 0): string {
     .split('\n')
     .map((line, index) => (index === 0 ? line : `${' '.repeat(indent)}${line}`))
     .join('\n');
-}
-
-/** Muted keyboard hint, packed from atomic groups and bounded to the frame width. */
-export function keyHint(groups: string[][], join = '   '): string[] {
-  const lines: string[] = [];
-  let current = '';
-  for (const group of groups) {
-    const chunk = group.join(' · ');
-    if (current === '') {
-      current = chunk;
-    } else if (visibleWidth(current) + join.length + visibleWidth(chunk) > frameWidth()) {
-      lines.push(current);
-      current = chunk;
-    } else {
-      current = `${current}${join}${chunk}`;
-    }
-  }
-  if (current !== '') lines.push(current);
-  return lines.map((line) => theme.muted(line));
 }

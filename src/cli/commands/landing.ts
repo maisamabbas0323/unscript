@@ -1,10 +1,12 @@
 import { theme } from '../ui/theme.js';
 import { introBlock } from '../ui/banner.js';
 import { clearScreen } from '../ui/terminal.js';
-import { realHeight } from '../ui/screen.js';
+import { realHeight, realWidth } from '../ui/screen.js';
 import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
+import { statusLine } from '../ui/status.js';
 import { OperationalError, EXIT_OK, EXIT_INTERRUPTED } from '../../core/errors.js';
 import { readPackageJson } from '../../utils/package-info.js';
+import { loadRuntimeConfig } from '../../config/env.js';
 import { runHelp } from './help.js';
 import { runVersionPage } from './version.js';
 import { runDoctor } from './doctor.js';
@@ -13,12 +15,15 @@ import { runTransform, runKnowledge } from './transform.js';
 /**
  * `unscript` — the interactive home screen.
  *
- * The terminal is cleared first, then the logo identity block is pinned to
- * the top-left corner (1 blank line above, 2-column left margin) on tall
- * terminals — compact `UNSCRIPT` header on short ones — and stays put
- * while the menu redraws around it. Selecting a category clears the
- * terminal again and shows that page on its own — the logo is never
- * duplicated below earlier content.
+ * The terminal is cleared first, then the identity block is pinned to the
+ * top-left corner (1 blank line above, 2-column left margin) and stays
+ * put while the menu redraws around it. Three height tiers: the full
+ * 10-row logo at ≥ 34 rows, the 6-row block wordmark at 28–33 rows, and
+ * a compact `UNSCRIPT` brand line below that. The status line under the
+ * identity block is real configuration (Context MCP / Gemini), not
+ * decoration. Selecting a category clears the terminal again and shows
+ * that page on its own — the logo is never duplicated below earlier
+ * content.
  */
 
 type LandingChoice = 'humanize' | 'knowledge' | 'doctor' | 'help' | 'version' | 'exit';
@@ -64,19 +69,26 @@ function identityWidth(): number {
 }
 
 /**
- * Static top of the home screen. Tall terminals get the full pinned
- * logo identity block; short terminals get a compact header so the
- * boxed menu below always fits on screen without scrolling (which would
- * break the absolute redraw math and hide the menu).
+ * Static top of the home screen. Three identity tiers by height: the
+ * full pinned logo at ≥ 34 rows, the 6-row block wordmark at 28–33
+ * rows, and a compact header below that — so the boxed menu below
+ * always fits on screen without scrolling (which would break the
+ * absolute redraw math and hide the menu). The status line is real
+ * configuration state, never decoration.
  */
 function landingTop(): string[] {
   const { version } = readPackageJson();
-  const tall = realHeight() >= 34;
-  const status = `${theme.success('Runtime ready')}${theme.muted(` · v${version}`)}`;
+  const config = loadRuntimeConfig();
+  const height = realHeight();
+  const tall = height >= 34;
+  const mid = !tall && height >= 28;
+  const status = statusLine(config, version, realWidth());
   const intro = tall
     ? introBlock(identityWidth(), { top: 1, left: 2 })
-    : [`  ${theme.brand('UNSCRIPT')}`];
-  return tall
+    : mid
+      ? introBlock(identityWidth(), { top: 1, left: 2, compact: true })
+      : [`  ${theme.brand('UNSCRIPT')}`];
+  return tall || mid
     ? [...intro, '', `  ${status}`, '', '  ' + theme.bright('What would you like to do?')]
     : [...intro, `  ${status}`, '  ' + theme.bright('What would you like to do?')];
 }

@@ -33,6 +33,8 @@ npm run lint         # eslint . (flat config)
 npm run build        # tsc -p tsconfig.build.json -> dist/
 npm test             # build, THEN vitest run (integration tests need dist/)
 npm run test:watch   # vitest (fails integration suite if dist/ is stale)
+npm run uicheck        # build, then pty snapshot + invariant checks; -live drives landing->doctor
+npm run uicheck:record # (re)write the golden pty snapshots under tests/pty/snapshots/
 npm run format       # prettier --write .
 npm run format:check # prettier --check .
 ```
@@ -48,11 +50,12 @@ skip or fail integration coverage.
   `doctor`, `landing`, `planned`, `transform` — which hosts both `humanize` and
   `knowledge`).
 - UI layer: `src/cli/ui/` — `theme.ts` (semantic palette + symbols), `banner.ts`
-  (the red shadow-style "UNSCRIPT" logo + wordmark fallback, page headers), `terminal.ts` (frame width/cursor/key
-  hint helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
+  (the red shadow-style "UNSCRIPT" logo + branded wordmark fallback, page headers), `terminal.ts` (frame width/cursor
+  helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
   `menu.ts` (interactive select + any-key prompts on node:readline raw mode),
   `pager.ts` (scrollable full-screen document page for results), `input.ts`
-  (multiline text entry).
+  (multiline text entry), `status.ts` (config status chips), `live.ts` (single
+  elapsed live status line).
 - Config: `src/config/index.ts` — dotenv `.env` loading + typed validation
   (`UnscriptConfig` shape is pinned by tests; do not break it).
   **A missing `.env` is normal, not an error.** Runtime vars
@@ -96,6 +99,10 @@ and conflicts preserved.
 
 ## Interactive UI rules (keep it honest and robust)
 
+The full enforcement checklist lives in `docs/UIUX.md` and is exercised by
+`npm run uicheck` (pty snapshots + invariants); the rules below are the
+load-bearing details.
+
 - The home screen (`landing`) and the transform/knowledge flows run only when
   stdin+stdout are TTYs; non-TTY usage exits 1 with a message (covered by
   tests).
@@ -103,14 +110,16 @@ and conflicts preserved.
   interface.** Listen on `process.stdin.on('keypress', (str, key) => …)`, not
   `rl.on('keypress', …)`, after creating the interface with `terminal: true`.
 - **Full-screen app, not a scrolling frame**: the screen is cleared
-  (`\x1b[2J\x1b[3J\x1b[H`) once at startup. On tall terminals (≥ 34 rows) the
-  identity block is the 10-row shadow-style logo (red ink, white highlights,
-  dim fill — `logoLines()` in `banner.ts`), pinned top-left with 1 blank line
-  above and a 2-column indent; on shorter terminals it degrades to the 6-row
-  block wordmark, then to a single `UNSCRIPT` brand line, and `wordmarkLines`
-  stays as the fallback. The identity block measures `process.stdout.columns`
-  directly (never the 60-column menu frame) and `promptSelect` fits its `top`
-  block to `realWidth()` so nothing wraps. `promptSelect` paints
+  (`\x1b[2J\x1b[3J\x1b[H`) once at startup. The identity block has three
+  height tiers, all pinned top-left with 1 blank line above and a 2-column
+  indent: at ≥ 34 rows the 10-row shadow-style logo (red ink, white
+  highlights, dim fill — `logoLines()` in `banner.ts`); at 28–33 rows the
+  6-row block wordmark (`introBlock(..., { compact: true })`); below that a
+  single `UNSCRIPT` brand line. The wordmark fallback and the brand color
+  are the logo's red — one identity everywhere. The identity block measures
+  `process.stdout.columns` directly (never the 60-column menu frame) and
+  `promptSelect` fits its `top` block to `realWidth()` so nothing wraps.
+  `promptSelect` paints
   its static `top` block exactly once and only redraws the choice region below
   it — the logo must never duplicate or re-render on arrow keys. Choices are
   restrained single-row items with exactly **one** indicator (`›` accents the
@@ -119,6 +128,9 @@ and conflicts preserved.
   (home screen). Below the list a **live detail pane** shows the full
   description of the active choice (re-rendered on every arrow), fed from
   `Choice.description` — the item row itself stays a single clean line.
+  The status line under the identity block is real configuration
+  (`statusLine` in `status.ts`, from `loadRuntimeConfig`) — chips name
+  exactly the variable that is missing when something is unset.
 - **One live status line, never a background screen dump.** The former static
   "Connecting to the Context MCP…" line and the multi-stage processing screen
   are replaced by a single-line live status (`UNSCRIPT · SANITY · <step>

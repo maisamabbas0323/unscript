@@ -596,3 +596,52 @@ self-gate, plus a double-prompt with the landing gate.
 | pty 100×34 (tall)                                              | full 76-col logo + tagline + rule + status + 6-item menu + hints + detail pane, all within screen |
 | pty 80×24 (compact)                                            | `UNSCRIPT` header + full menu, no overflow                                                        |
 | pty 100×34 with `NO_COLOR=1`                                   | logo renders plain; only cursor/clear CSI codes remain                                            |
+
+## UI/UX enforcement + identity unification (Step 5.10)
+
+### What changed
+
+- **Dead code removed.** `statusTag` and `tagRule` (`screen.ts`), `clearFrame`
+  and `keyHint` (`terminal.ts`), and `viewportTop` (`edit.ts`) were
+  verified-unused exports (no `src/` or `tests/` references) and deleted.
+- **In-repo pty regression harness (`npm run uicheck`).** `tests/pty/run.py`
+  (stdlib-only) drives the built CLI on a real pty at fixed sizes,
+  `tests/pty/run.mjs` is the node wrapper (skips with a note if python3 is
+  absent, never masks failures), and `tests/pty/snapshots/` holds golden
+  frames. It asserts per screen: no line wider than the terminal, no content
+  past the bottom row, exactly one elapsed number on live lines, zero color
+  codes under `NO_COLOR`, and Esc exiting with code 0. `--live` additionally
+  drives landing → doctor → return → exit and asserts no
+  `MaxListenersExceededWarning` across the session. The harness is hermetic:
+  the three runtime credential env vars are scrubbed to empty strings, so
+  snapshots show the honest unset state and never touch the network or leak
+  secrets (dotenv cannot override existing env vars). Refresh deliberately
+  with `npm run uicheck:record`.
+- **Written contract (`docs/UIUX.md`).** The enforceable checklist —
+  honesty (no implied features, color never carries meaning alone, real
+  timers), semantic color/symbols, region/width geometry, interaction rules,
+  and the `uicheck` gate — with a pointer from AGENTS.md.
+- **Three home-screen identity tiers.** ≥ 34 rows: full 10-row logo; 28–33
+  rows: the 6-row block wordmark via `introBlock(..., { compact: true })`;
+  below: compact `UNSCRIPT` brand line. Verified at 80×24 / 80×28 / 100×34.
+- **Single red identity.** `theme.brand` moved from cyan to the logo's red
+  (headings, page chrome, live status); the fallback wordmark lost its
+  rainbow letter cycle (`WORD_COLORS` deleted) and is painted with the brand
+  — the logo, wordmark, and headers are one family. Semantic roles
+  (success/warning/error) are unchanged.
+- **Config-aware status line.** New `src/cli/ui/status.ts` — pure
+  `statusChips(config)` maps real `loadRuntimeConfig` state to chips, and
+  `statusLine()` renders them bounded to the terminal width. The landing now
+  shows `✓ Context MCP · ✓ Gemini · v0.1.0` when ready, or names exactly
+  what is unset (`! Context MCP unset`) — nothing invented, NO_COLOR-safe.
+
+### Verified
+
+| Check                                                          | Result                                                           |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `npx prettier --check .` | pass                                                             |
+| `npm test` (build-first integration)                           | pass (full suite, 169 tests)                                     |
+| `npm run uicheck` (node wrapper → run.py --check)              | pass — 4 golden snapshots + structural invariants                |
+| `npm run uicheck:record`                                       | recorded landing-80x24 / 80x28 / 100x34 / nocolor                |
+| `python3 tests/pty/run.py --live`                              | landing → doctor → return → exit, no MaxListenersExceededWarning |
+| pty 80×24 / 80×28 / 100×34                                     | compact header / 6-row wordmark / full logo — none overflow      |

@@ -29,7 +29,9 @@ export interface Theme {
 
 export function makeTheme(stream: StreamLike = process.stdout): Theme {
   return {
-    brand: (text) => colors.cyan(colors.bold(text, stream), stream),
+    // Brand = the logo's red ink; one identity across the home screen,
+    // headings, and page chrome. Semantic roles below stay unchanged.
+    brand: (text) => colors.red(colors.bold(text, stream), stream),
     accent: (text) => colors.magenta(text, stream),
     muted: (text) => colors.gray(text, stream),
     bright: (text) => colors.bold(text, stream),

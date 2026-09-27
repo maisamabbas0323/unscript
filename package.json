@@ -29,7 +29,9 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "uicheck": "npm run build && node tests/pty/run.mjs",
+    "uicheck:record": "npm run build && node tests/pty/run.mjs record"
   },
   "dependencies": {
     "dotenv": "^16.4.7"
