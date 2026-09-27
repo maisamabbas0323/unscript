@@ -21,3 +21,12 @@ coverage/
 # Python bytecode caches
 __pycache__/
 *.pyc
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Sanity runtime state (the Studio lives under unscript-knowledge/)
+.sanity/
+
+# Local npm packs
+*.tgz
