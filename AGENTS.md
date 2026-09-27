@@ -55,9 +55,11 @@ skip or fail integration coverage.
   helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
   `menu.ts` (interactive select + any-key prompts on node:readline raw mode),
   `pager.ts` (scrollable full-screen document page for `knowledge`),
-  `resultPage.ts` (the transform-result page: two independently scrollable
-  ORIGINAL/REWORKED panels with per-pane OSC 52 copy, a details view, and a
-  responsive side-by-side/stacked layout), `input.ts`
+  `resultPage.ts` (the transform-result dashboard: ORIGINAL/REWORKED panels
+  sized to their contents — always equal height and width — with per-pane
+  OSC 52 copy available from the first paint, visible KNOWLEDGE APPLIED +
+  SOURCES cards, a details view, and a responsive side-by-side/stacked
+  layout), `input.ts`
   (multiline text entry), `status.ts` (config status chips), `live.ts` (single
   elapsed live status line).
 - Config: `src/config/index.ts` — dotenv `.env` loading + typed validation
@@ -169,16 +171,21 @@ load-bearing details.
 - Moving into a page (humanize/transform/knowledge/doctor/help/version) clears
   the screen again and renders that page alone — no logo, no leftover menu, no
   stacked content. Exiting clears once more and prints `Bye.` / `Interrupted.`
-  / `Cancelled.`. The transform **result** page is a split-screen compare
-  (`resultPage.ts`): ORIGINAL and REWORKED render as two panels that scroll
-  **independently** (each keeps its own scroll offset), side by side on wide
+  / `Cancelled.`. The transform **result** page is a dashboard
+  (`resultPage.ts`): ORIGINAL and REWORKED render as two bordered panels that
+  are always the **same height and width**, sized **according to the
+  contents** (short texts shrink both panels together), side by side on wide
   terminals and stacked on narrow ones — the layout re-adapts live on
-  `resize`. `Tab` (or ← →) switches focus; `c` copies the focused panel and
-  `C` the other via the terminal clipboard (OSC 52), with an honest
+  `resize`. Below them, KNOWLEDGE APPLIED and SOURCES are visible on the main
+  screen as boxed cards (real retrieval provenance: rules, patterns,
+  preservation count, source documents), `Tab` (or ← →) cycles focus among
+  ORIGINAL → REWORKED → KNOWLEDGE, and each region scrolls independently. Copy
+  is available from the **first paint**: `c` copies the focused panel and `C`
+  the other via the terminal clipboard (OSC 52), with an honest
   "Copied … — sent to terminal clipboard" flash; `d` toggles the details view
-  (provenance/checks/sources as a scrollable full-width document). Both pages
-  own their return gate (footer: "Enter or Esc to return"), so the landing
-  does not re-prompt for them. Doctor/help/version and cancelled wizard steps
+  (provenance/checks/conflicts/notes as a scrollable full-width document).
+  Both pages own their return gate (footer: "Enter or Esc to return"), so the
+  landing does not re-prompt for them. Doctor/help/version and cancelled wizard steps
   return through the landing's overlay `promptAnyKey` gate.
 - **`promptAnyKey` is an overlay, never a wipe**: it pins its label to the
   bottom row of the terminal and does NOT clear the page beneath it — the

@@ -5,7 +5,12 @@ import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { promptMultiline } from '../ui/input.js';
 import { liveStatus } from '../ui/live.js';
 import { scrollablePage } from '../ui/pager.js';
-import { compareResultPage } from '../ui/resultPage.js';
+import {
+  compareResultPage,
+  type ComparePageInput,
+  type SourceEntry,
+  type KnowledgeTag,
+} from '../ui/resultPage.js';
 import { OperationalError, EXIT_INTERRUPTED, EXIT_OK } from '../../core/errors.js';
 import {
   loadRuntimeConfig,
@@ -189,6 +194,37 @@ function sourceLines(result: TransformationResult): string[] {
   });
 }
 
+/** Unique source entries for the SOURCES card (real provenance only). */
+function uniqueSources(result: TransformationResult): SourceEntry[] {
+  const seen = new Set<string>();
+  const entries: SourceEntry[] = [];
+  for (const entry of result.provenance) {
+    if (entry.source === undefined) continue;
+    if (seen.has(entry.source.id)) continue;
+    seen.add(entry.source.id);
+    entries.push({ name: entry.source.name ?? 'unnamed source', url: entry.source.url });
+  }
+  return entries;
+}
+
+/** Applied knowledge for the KNOWLEDGE APPLIED card — rules, patterns, counts. */
+function appliedKnowledge(result: TransformationResult): ComparePageInput['knowledge'] {
+  const rules: KnowledgeTag[] = [];
+  const patterns: KnowledgeTag[] = [];
+  for (const entry of result.provenance) {
+    if (entry.kind === 'transformationRule') {
+      rules.push({ title: entry.title, source: entry.source?.name });
+    } else if (entry.kind === 'writingPattern') {
+      patterns.push({ title: entry.title, source: entry.source?.name });
+    }
+  }
+  return {
+    rules,
+    patterns,
+    preservationCount: result.applied.preservationRuleIds.length,
+  };
+}
+
 /** Header summary shown above the panes: real stats, never padding. */
 function resultSummary(result: TransformationResult): string[] {
   const selection = [
@@ -339,6 +375,8 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
       original: result.requestText,
       reworked: result.transformedText,
       summary: resultSummary(result),
+      knowledge: appliedKnowledge(result),
+      sources: uniqueSources(result),
       details: renderResultDetails(result),
     });
     return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;

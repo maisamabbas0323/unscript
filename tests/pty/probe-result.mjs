@@ -47,6 +47,17 @@ const page = await compareResultPage({
     '  DONE  3 rule(s) · 2 pattern(s) · 1 source(s) · 42ms real time',
     '  Selection  article · warm · relaxed',
   ],
+  knowledge: {
+    rules: [
+      { title: 'Write in active voice', source: 'Editorial style guide' },
+      { title: 'Vary sentence length to a natural rhythm', source: 'Editorial style guide' },
+      { title: 'Prefer concrete nouns over abstract fillers', source: 'Editorial style guide' },
+      { title: 'Keep sentences under twenty words', source: 'Editorial style guide' },
+    ],
+    patterns: [{ title: 'Remove repetitive filler' }, { title: 'Prefer short sentences' }],
+    preservationCount: 2,
+  },
+  sources: [{ name: 'Editorial style guide' }, { name: 'Product writing patterns' }],
   details,
 });
 

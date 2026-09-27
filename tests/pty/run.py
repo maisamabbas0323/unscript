@@ -442,12 +442,13 @@ def run_config_snapshot(record: bool) -> int:
 
 
 def run_result_probe() -> int:
-    """Drive the REAL result page on a pty (100x30): both panels render side
-    by side, each scrolls independently, Tab switches focus, `c` copies with
-    a flash, `d` toggles details, narrowing the terminal switches to a
-    stacked layout, and Enter returns with exit 0. Hermetic and deterministic
-    (sample content, no network)."""
-    log("result probe: split panes scroll/copy/details + responsive resize")
+    """Drive the REAL result page on a pty (100x30): the dashboard renders
+    (compare panes + KNOWLEDGE APPLIED + SOURCES cards on one screen), each
+    region scrolls independently, Tab cycles focus ORIGINAL -> REWORKED ->
+    KNOWLEDGE, `c` copies with a flash, `d` toggles the details view,
+    narrowing the terminal switches to a stacked layout, and Enter returns
+    with exit 0. Hermetic and deterministic (sample content, no network)."""
+    log("result probe: dashboard + knowledge cards, scroll/copy/details + resize")
     failed = False
     rows, cols = 30, 100
     pid, fd = spawn_probe(rows, cols)
@@ -458,7 +459,15 @@ def run_result_probe() -> int:
         frame = normalize_rows(render_frame(data.decode("utf-8", "replace"), rows, cols))
         joined = "\n".join(frame)
         errors = []
-        for needle in ("UNSCRIPT / REWORKED", "[c] copy", "[C] copy", "ORIGINAL 1–", "REWORKED 1–"):
+        for needle in (
+            "UNSCRIPT / REWORKED",
+            "[c] copy",
+            "[C] copy",
+            "ORIGINAL 1–",
+            "REWORKED 1–",
+            "KNOWLEDGE APPLIED",
+            "SOURCES",
+        ):
             if needle not in joined:
                 errors.append(f"missing {needle!r}")
         orig_rows = [i for i, row in enumerate(frame) if "ORIGINAL" in row and "\u250c" in row]
@@ -474,14 +483,21 @@ def run_result_probe() -> int:
             for err in errors:
                 log(f"FAIL result probe: {err}")
 
-        # Each panel has its own scroll state: scroll the focused REWORKED
-        # panel first (initial focus), then switch focus and scroll ORIGINAL.
+        # Each region has its own scroll state: scroll the focused REWORKED
+        # panel first (initial focus), then cycle to KNOWLEDGE and ORIGINAL.
         data = send(fd, b"\x1b[B\x1b[B\x1b[B")
         session += data
         if "REWORKED 4–" not in plain(data).decode("utf-8", "replace"):
             failed = True
             log("FAIL result probe: REWORKED panel did not scroll (own state)")
-        data = send(fd, b"\t")
+        data = send(fd, b"\t")  # focus -> KNOWLEDGE
+        session += data
+        data = send(fd, b"\x1b[B")
+        session += data
+        if "KNOWLEDGE 2–" not in plain(data).decode("utf-8", "replace"):
+            failed = True
+            log("FAIL result probe: KNOWLEDGE cards did not scroll after focus switch")
+        data = send(fd, b"\t")  # focus -> ORIGINAL
         session += data
         data = send(fd, b"\x1b[B")
         session += data
@@ -496,11 +512,11 @@ def run_result_probe() -> int:
             failed = True
             log("FAIL result probe: copy flash missing after [c]")
 
-        # Details view and back.
+        # Details view (full provenance doc) and back.
         data = send(fd, b"d")
         session += data
         text = plain(data).decode("utf-8", "replace")
-        if "KNOWLEDGE APPLIED" not in text or "back to panes" not in text:
+        if "CHECK" not in text or "back to panes" not in text:
             failed = True
             log("FAIL result probe: details view did not render with its hint")
         data = send(fd, b"d")

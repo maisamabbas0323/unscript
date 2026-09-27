@@ -49,8 +49,9 @@ terminal around them.
 Writing happens in the terminal for the same reason it happens in an editor:
 no login, no web page, no account ceremony. `unscript` opens a home screen
 with a keyboard-navigated menu, the transform flow guides you through a
-handful of choices, and the result appears as a side-by-side compare — all in
-the place you already work. It is deliberately a small, focused tool with
+handful of choices, and the result appears as a dashboard — original and
+rework side by side, with the applied knowledge and its sources right below —
+all in the place you already work. It is deliberately a small, focused tool with
 explicit keyboard controls and honest exit codes.
 
 ## The Sanity story
@@ -112,9 +113,10 @@ mode; the MCP session is read-only.
    the original and reports any protected item that changed: numbers, dates,
    URLs, technical identifiers, quoted text, explicit requirements, and
    uncertainty markers (names produce warnings, not failures).
-6. **Present.** The result page shows your original and the rework side by
-   side with independent scrolling, copy-to-clipboard, and a details view of
-   what knowledge was applied.
+6. **Present.** The result is a dashboard: your original and the rework as two
+   panels of equal size (sized to the contents), with KNOWLEDGE APPLIED and
+   SOURCES cards visible below them, copy-to-clipboard from the first paint,
+   and a details view for the full provenance document.
 
 ## The knowledge model
 
@@ -167,8 +169,9 @@ pipeline and there is nothing left to prompt with — nothing is hard-coded.
   requirements, and uncertainty are checked before the result is shown.
 - **Rule-conflict handling** — documented `conflictsWith` references are
   surfaced with their priority resolution instead of being applied blindly.
-- **Split-screen result** — original versus rework in independent scroll
-  panes with terminal clipboard copy (OSC 52) and a details view.
+- **Result dashboard** — original and rework as equal panels sized to the
+  contents, KNOWLEDGE APPLIED + SOURCES cards on screen, terminal clipboard
+  copy (OSC 52) from the first paint, and a details view.
 - **Diagnostics** — `unscript doctor` runs real local checks, plus clearly
   labeled live service checks when credentials are configured.
 - **Honest failure** — missing credentials, endpoints, or knowledge produce
@@ -296,10 +299,12 @@ command surface is stable, the feature is not.
    Sanity (so the available options are whatever the dataset actually holds).
 3. **Transform** — a single live status line shows real phases: retrieving →
    reworking → checking.
-4. **Result** — your original and the rework side by side. Each panel scrolls
-   independently (`Tab` / arrows to move focus, `c` copies the focused panel
-   to the terminal clipboard, `C` the other, `d` opens the details view, and
-   the layout reflows from side-by-side to stacked as the terminal narrows).
+4. **Result** — a dashboard showing your original and the rework as two panels
+   of equal size (sized to the contents), with the KNOWLEDGE APPLIED and
+   SOURCES cards visible below. `Tab` / arrows cycle focus across the panels
+   and the knowledge cards, `c` copies the focused panel to the terminal
+   clipboard (`C` the other), `d` opens the details view, and the layout
+   reflows from side-by-side to stacked as the terminal narrows.
 
 Interactive screens require a real terminal; non-TTY usage exits 1 with an
 explanation. Exit codes: `0` success, `1` operational error, `2` usage error,
@@ -327,8 +332,8 @@ explanation. Exit codes: `0` success, `1` operational error, `2` usage error,
   injected fake `fetch` implementations; there are no live-service assertions.
 - **UI harness.** `tests/pty/` drives the real CLI on a pty — golden
   snapshots of the landing tiers, structural invariants (no overflow,
-  NO_COLOR, exit codes), and a probe of the result page’s scroll/copy/
-  details behavior.
+  NO_COLOR, exit codes), and a probe of the result dashboard’s scroll/copy/
+  knowledge-cards/details behavior.
 - **Static checks.** strict `tsc`, ESLint, and Prettier run in CI-style
   scripts (`npm run typecheck`, `lint`, `format:check`).
 

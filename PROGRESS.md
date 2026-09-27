@@ -804,3 +804,44 @@ compare the user can actually read and take away.
 | `npm run uicheck:record`                         | re-recorded 3 landing snapshots (tagline row now left-anchored)               |
 | `npm run uicheck` (golden + probe)               | pass — snapshots green against the left-anchored tagline row                  |
 | 80×24 / 80×28 / 100×34                           | all tiers keep their original height; tagline sits under the logo's left edge |
+
+## Result dashboard with knowledge cards (result page)
+
+### What changed
+
+- **The result page is now a dashboard, not a bare split compare.** ORIGINAL
+  and REWORKED stay two bordered panels but are always the **same height and
+  width**, sized **according to the contents** — both share one budget that
+  follows the taller wrapped text (capped by the space the cards need), so
+  short texts render small equal panels. Copy is available from the **first
+  paint** (`[c] copy` / `[C] copy`, OSC 52 terminal clipboard).
+- **KNOWLEDGE APPLIED and SOURCES are visible on the main screen.** The
+  `compareResultPage` input now takes structured `knowledge` (rules, patterns,
+  preservation count) and `sources`; `buildKnowledgeCards` renders them as
+  boxed cards with real provenance (source-tagged rules, grouped by kind),
+  which `transform.ts` feeds from the same retrieval data as the details doc.
+- **Three independently scrollable regions.** `Tab` (or ← →) cycles focus
+  ORIGINAL → REWORKED → KNOWLEDGE; each scrolls with ↑↓/PgUp/PgDn/Home/End and
+  the focused region carries the accent border. KNOWLEDGE focus copies
+  REWORKED (the primary output). `d` still opens the full details document
+  (CHECK / CONFLICTS / NOTES).
+- **Layout is content + screen aware.** `computeResultLayout(width, height,
+contentH, knowledgeH)` shrinks header/footer before the panel region,
+  gives the cards their content height (capped at half the middle region),
+  and never paints a row wider than the terminal or past its bottom row —
+  side-by-side ≥ 53 columns, stacked below, reflowing live on resize.
+- **Tests follow the new contract.** `tests/result-page.test.ts` covers the
+  content-aware layout, equal budgets, card rendering and width invariants;
+  the pty probe (`tests/pty/probe-result.mjs` + `run.py`) drives the real
+  dashboard: panels + cards on one screen, per-region scroll, focus cycling,
+  copy flash, details toggle, and the wide→stacked resize.
+
+### Verified
+
+| Check                                            | Result                                             |
+| ------------------------------------------------ | -------------------------------------------------- |
+| `tsc --noEmit` / `eslint .` / `prettier --check` | pass                                               |
+| `npm test` (build-first integration)             | pass                                               |
+| `npm run uicheck` (golden + result probe)        | pass — dashboard renders, scrolls, copies, resizes |
+| probe: 100×30 dashboard / 46×30 stacked          | pass, no row exceeds the terminal width            |
+| probe: per-region scroll / copy flash / details  | pass, no MaxListenersExceededWarning               |

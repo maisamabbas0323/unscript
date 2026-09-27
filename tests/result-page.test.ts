@@ -1,47 +1,88 @@
 import { describe, expect, it } from 'vitest';
-import { computeResultLayout, osc52Sequence, renderPane } from '../src/cli/ui/resultPage.js';
+import {
+  computeResultLayout,
+  osc52Sequence,
+  renderPane,
+  buildKnowledgeCards,
+  type ComparePageInput,
+} from '../src/cli/ui/resultPage.js';
 
 const stripAnsi = (line: string): string => line.replace(/\u001b\[[0-9;]*m/g, '');
 
+const sampleInput: ComparePageInput = {
+  original: '',
+  reworked: '',
+  summary: [],
+  knowledge: {
+    rules: [
+      { title: 'Write in active voice', source: 'Editorial style guide' },
+      { title: 'Vary sentence length', source: 'Editorial style guide' },
+    ],
+    patterns: [{ title: 'Remove repetitive filler' }],
+    preservationCount: 2,
+  },
+  sources: [
+    { name: 'Editorial style guide' },
+    { name: 'Product docs', url: 'https://docs.example' },
+  ],
+  details: [],
+};
+
 describe('computeResultLayout', () => {
-  it('pairs panels side by side on wide terminals', () => {
-    const layout = computeResultLayout(100, 34);
+  it('pairs panels side by side on wide terminals with content-sized budgets', () => {
+    const layout = computeResultLayout(100, 34, 36, 11);
     expect(layout.sideBySide).toBe(true);
     expect(layout.inner).toBe(47); // (100 - 5) / 2
-    expect(layout.regionRows).toBe(34 - 2 - 4); // header + footer
-    expect(layout.budget).toBe(layout.regionRows - 2);
-    expect(layout.regionTop).toBe(5);
-    expect(layout.footerTop).toBe(33);
+    expect(layout.headerRows).toBe(4);
+    expect(layout.footerRows).toBe(2);
+    expect(layout.middle).toBe(34 - 4 - 2);
+    expect(layout.paneBudget).toBe(15); // (middle - knowledge share) - borders
+    expect(layout.knowledgeRows).toBe(11); // cards get their full height
+  });
+
+  it('sizes BOTH panels to the contents (equal budget) and keeps cards visible', () => {
+    const long = computeResultLayout(100, 34, 36, 11);
+    const short = computeResultLayout(100, 34, 4, 11);
+    expect(short.paneBudget).toBe(4); // content-fitted, not full height
+    expect(long.paneBudget).toBe(15); // capped by the knowledge share on long texts
+    // the cards always keep their content height
+    expect(short.knowledgeRows).toBe(11);
+    expect(long.knowledgeRows).toBe(11);
   });
 
   it('stacks panels on narrow terminals', () => {
-    const layout = computeResultLayout(40, 24);
+    const layout = computeResultLayout(40, 24, 36, 11);
     expect(layout.sideBySide).toBe(false);
     expect(layout.inner).toBe(38);
-    // two blocks (budget + 2 each) plus a 1-row gap fit the 18-row region.
-    expect(layout.budget).toBe(6);
-    expect(layout.regionRows).toBe(18);
+    expect(layout.paneBudget).toBe(2);
+    expect(layout.knowledgeRows).toBe(9);
   });
 
-  it('shrinks the header before the panel region on short terminals', () => {
-    const layout = computeResultLayout(80, 8);
-    // full header (4) + footer (2) leaves 2 rows < 3 -> header drops to 2.
-    expect(layout.headerRows).toBe(2);
-    expect(layout.regionRows).toBe(4);
-    expect(layout.budget).toBe(2);
+  it('shrinks the header/footer before the panel region on short terminals', () => {
+    const layout = computeResultLayout(80, 8, 36, 11);
+    expect(layout.middle).toBe(6); // header dropped (4 -> 2 -> 0), footer kept 2
+    expect(layout.headerRows).toBe(0);
+    expect(layout.paneBudget).toBe(1);
+    expect(layout.knowledgeRows).toBe(3);
   });
 
   it('degrades to a minimal frame on tiny terminals without crashing', () => {
-    const layout = computeResultLayout(80, 5);
-    expect(layout.regionRows).toBeGreaterThanOrEqual(3);
-    expect(layout.headerRows).toBe(0);
-    expect(layout.budget).toBeGreaterThanOrEqual(1);
+    const layout = computeResultLayout(80, 5, 36, 11);
+    expect(layout.paneBudget).toBeGreaterThanOrEqual(1);
+    expect(layout.knowledgeRows).toBeGreaterThanOrEqual(1);
+    // painted rows never exceed the terminal height
+    const painted =
+      layout.headerRows +
+      (layout.sideBySide ? layout.paneBudget + 2 : 2 * layout.paneBudget + 5) +
+      layout.knowledgeRows +
+      layout.footerRows;
+    expect(painted).toBeLessThanOrEqual(layout.height);
   });
 
-  it('every pane block fits the terminal width', () => {
+  it('every panel block and card fits the terminal width', () => {
     for (const width of [8, 20, 40, 53, 100, 200]) {
       for (const height of [5, 12, 24, 40]) {
-        const layout = computeResultLayout(width, height);
+        const layout = computeResultLayout(width, height, 36, 11);
         const blockWidth = layout.inner + 2;
         if (layout.sideBySide) {
           expect(2 * blockWidth + 1).toBeLessThanOrEqual(width);
@@ -119,5 +160,40 @@ describe('renderPane', () => {
     expect(stripAnsi(rows[rows.length - 1] ?? '')).toContain('1–1 of 1');
     // no negative "from" even though top exceeds nothing.
     expect(stripAnsi(rows[rows.length - 1] ?? '')).not.toMatch(/\b0–/);
+  });
+});
+
+describe('buildKnowledgeCards', () => {
+  it('renders KNOWLEDGE APPLIED and SOURCES cards with real provenance', () => {
+    const rows = buildKnowledgeCards(sampleInput, 60);
+    const text = rows.map((row) => stripAnsi(row)).join('\n');
+    expect(text).toContain('KNOWLEDGE APPLIED');
+    expect(text).toContain('2 rules · 1 pattern');
+    expect(text).toContain('Transformation rules');
+    expect(text).toContain('Write in active voice');
+    expect(text).toContain('Editorial style guide');
+    expect(text).toContain('2 preservation rule(s) enforced');
+    expect(text).toContain('SOURCES');
+    expect(text).toContain('Product docs');
+  });
+
+  it('every card row is exactly the requested width', () => {
+    for (const width of [20, 60, 100]) {
+      const rows = buildKnowledgeCards(sampleInput, width);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(stripAnsi(row).length).toBe(width);
+      }
+    }
+  });
+
+  it('stays honest when nothing was applied or sourced', () => {
+    const rows = buildKnowledgeCards(
+      { ...sampleInput, knowledge: { rules: [], patterns: [], preservationCount: 0 }, sources: [] },
+      60,
+    );
+    const text = rows.map((row) => stripAnsi(row)).join('\n');
+    expect(text).toContain('none retrieved — Sanity returned no applicable knowledge');
+    expect(text).toContain('no source attached to the retrieved knowledge');
   });
 });

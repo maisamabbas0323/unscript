@@ -79,33 +79,41 @@ plus structural invariants) and the unit suite.
 
 ## 4b. The transform-result page (`resultPage.ts`)
 
-`unscript humanize` finishes on a split-screen compare, not a single
-document:
+`unscript humanize` finishes on a dashboard, not a bare split screen:
 
-- ORIGINAL and REWORKED are two bordered panels that scroll
-  **independently** — each keeps its own scroll offset and its own
-  line/scroll indicator (`1–22 of 59`) in the footer status row, so
-  comparing long texts never forces one pane past the other.
-- Copy is a real action, not a promise: `c` writes the focused panel's
-  raw text (never the wrapped render) to the terminal clipboard via the
-  OSC 52 sequence, `C` copies the other panel, and the footer flashes an
-  honest confirmation: `✓ Copied reworked — sent to terminal clipboard`.
-  No clipboard helper or spawn is required, so no dependency was added.
-- Fully responsive: at ≥ 53 columns the panels sit side by side; below
-  that they stack vertically. Panel budgets, header/footer rows, and the
-  wrapped text all recompute on every paint and on every terminal
-  `resize`, so resizing mid-page reflows the compare live without
-  overflow or ghost lines.
+- ORIGINAL and REWORKED are two bordered panels that are always the **same
+  height and width**, sized **according to the contents**: both get an
+  identical budget that follows the taller of the two wrapped texts (capped
+  by the space the knowledge cards need), so a short text renders small,
+  equal panels instead of two oversized boxes. Each panel scrolls
+  **independently** — its own offset and its own `1–22 of 59` indicator in
+  the footer status row.
+- **Copy is available from the very first paint**: `c` writes the focused
+  panel's raw text (never the wrapped render) to the terminal clipboard via
+  the OSC 52 sequence, `C` copies the other panel, and the footer flashes an
+  honest confirmation: `✓ Copied reworked — sent to terminal clipboard`. No
+  clipboard helper or spawn is required, so no dependency was added.
+- **Knowledge is visible, not hidden**: KNOWLEDGE APPLIED and SOURCES render
+  on the main screen as boxed cards below the panels — rules and patterns
+  grouped by kind and tagged with their real retrieval source, the
+  preservation-rule count, and the source documents. `Tab` (or ← →) cycles
+  focus ORIGINAL → REWORKED → KNOWLEDGE; each of the three regions scrolls
+  with ↑↓/PgUp/PgDn/Home/End and the focused region carries the accent border.
+- Fully responsive: at ≥ 53 columns the panels sit side by side; below that
+  they stack vertically. Panel budgets, card rows, and the wrapped text all
+  recompute on every paint and on every terminal `resize`, so resizing
+  mid-page reflows the dashboard live without overflow or ghost lines.
 - `d` toggles the details view: the full-width provenance document
   (KNOWLEDGE APPLIED / SOURCES / CHECK / CONFLICTS / NOTES) as a
   scrollable page with its own hint row (`[d] back to panes`).
-- Focus is explicit: the focused panel carries the accent border, `›`
-  title marker, `[c] copy` chip; the other stays muted with a `[C] copy`
-  chip. Return is always Enter or Esc; Ctrl+C interrupts (exit 130).
+- Focus is explicit: the focused/copy-target panel carries the accent border,
+  `›` title marker, `[c] copy` chip; the other stays muted with a `[C] copy`
+  chip (KNOWLEDGE focus copies REWORKED, the primary output). Return is
+  always Enter or Esc; Ctrl+C interrupts (exit 130).
 - All copy is bounded: pane rows are `inner + 2` cells, the combined
-  side-by-side row is `2·(inner + 1) + 1`, and every footer/hint line is
-  fitted to the real width — narrow terminals truncate honestly (`…`)
-  instead of wrapping.
+  side-by-side row is `2·(inner + 1) + 1`, every card row is exactly the
+  terminal width, and every footer/hint line is fitted to the real width —
+  narrow terminals truncate honestly (`…`) instead of wrapping.
 
 ## 5. The `uicheck` gate
 
