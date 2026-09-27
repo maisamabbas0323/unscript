@@ -39,7 +39,9 @@ plus structural invariants) and the unit suite.
   - the home identity block measures `process.stdout.columns` directly
     (`identityWidth()`), and `promptSelect` fits its pinned `top` block
     with `fitFrame(topLines, realWidth())`;
-  - result/knowledge pages and doctor/help/version fit every line to
+  - the result page measures `realWidth()` for its panels and fits every
+    pane, header, and footer line to it, so the side-by-side/stacked math
+    never overflows; knowledge/doctor/help/version fit every line to
     `realWidth()` / `terminalWidth()`.
 - Home identity tiers by height: ≥ 34 rows the full 10-row logo; 28–33
   rows the 6-row block wordmark (`introBlock(..., { compact: true })`);
@@ -70,6 +72,36 @@ plus structural invariants) and the unit suite.
   user returns; the return gate (`promptAnyKey`) is an overlay pinned to
   the bottom row — it never wipes the page beneath it.
 
+## 4b. The transform-result page (`resultPage.ts`)
+
+`unscript humanize` finishes on a split-screen compare, not a single
+document:
+
+- ORIGINAL and REWORKED are two bordered panels that scroll
+  **independently** — each keeps its own scroll offset and its own
+  line/scroll indicator (`1–22 of 59`) in the footer status row, so
+  comparing long texts never forces one pane past the other.
+- Copy is a real action, not a promise: `c` writes the focused panel's
+  raw text (never the wrapped render) to the terminal clipboard via the
+  OSC 52 sequence, `C` copies the other panel, and the footer flashes an
+  honest confirmation: `✓ Copied reworked — sent to terminal clipboard`.
+  No clipboard helper or spawn is required, so no dependency was added.
+- Fully responsive: at ≥ 53 columns the panels sit side by side; below
+  that they stack vertically. Panel budgets, header/footer rows, and the
+  wrapped text all recompute on every paint and on every terminal
+  `resize`, so resizing mid-page reflows the compare live without
+  overflow or ghost lines.
+- `d` toggles the details view: the full-width provenance document
+  (KNOWLEDGE APPLIED / SOURCES / CHECK / CONFLICTS / NOTES) as a
+  scrollable page with its own hint row (`[d] back to panes`).
+- Focus is explicit: the focused panel carries the accent border, `›`
+  title marker, `[c] copy` chip; the other stays muted with a `[C] copy`
+  chip. Return is always Enter or Esc; Ctrl+C interrupts (exit 130).
+- All copy is bounded: pane rows are `inner + 2` cells, the combined
+  side-by-side row is `2·(inner + 1) + 1`, and every footer/hint line is
+  fitted to the real width — narrow terminals truncate honestly (`…`)
+  instead of wrapping.
+
 ## 5. The `uicheck` gate
 
 `npm run uicheck` builds `dist/` then drives the real CLI on a pty
@@ -80,6 +112,11 @@ plus structural invariants) and the unit suite.
 - exactly one elapsed `<n>s` token on live-status lines;
 - `NO_COLOR` frames contain zero color codes;
 - Esc on the landing exits with code 0;
+- the result probe (`tests/pty/probe-result.mjs`) drives the **real**
+  `compareResultPage` component: both panels render, each scrolls
+  independently, Tab switches focus, `c` flashes the honest copy
+  confirmation, `d` opens details, narrowing the terminal flips
+  side-by-side to stacked with no overflow, and Enter exits 0;
 - `--live`: landing → doctor → return → exit works, and no
   `MaxListenersExceededWarning` appears across the session.
 

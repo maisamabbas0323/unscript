@@ -46,6 +46,7 @@ SCRUB = {
 ANCHOR_LANDING = "What shall we do today?"
 ANCHOR_DOCTOR = "UNSCRIPT / DOCTOR"
 ANCHOR_CONFIG = "UNSCRIPT / CONFIG"
+ANCHOR_RESULT = "UNSCRIPT / REWORKED"
 
 
 def log(msg: str) -> None:
@@ -74,6 +75,24 @@ def spawn_cli(rows: int, cols: int, nocolor: bool = False, word: str | None = No
         os.chdir(str(cwd) if cwd else str(ROOT))
         argv = ["node", str(CLI)] + ([word] if word else [])
         os.execvp("node", argv)
+    set_size(fd, rows, cols)
+    return pid, fd
+
+
+PROBE = ROOT / "tests" / "pty" / "probe-result.mjs"
+
+
+def spawn_probe(rows: int, cols: int):
+    """Fork the result-page probe (`node probe-result.mjs`) on a pty. The
+    probe drives the REAL dist/cli/ui/resultPage.js component with sample
+    content — hermetic, no network, no env needed."""
+    pid, fd = pty.fork()
+    if pid == 0:  # child
+        os.environ["TERM"] = "xterm-256color"
+        for key, value in SCRUB.items():
+            os.environ[key] = value
+        os.chdir(str(ROOT))
+        os.execvp("node", ["node", str(PROBE)])
     set_size(fd, rows, cols)
     return pid, fd
 
@@ -422,6 +441,108 @@ def run_config_snapshot(record: bool) -> int:
     return 1 if failed else 0
 
 
+def run_result_probe() -> int:
+    """Drive the REAL result page on a pty (100x30): both panels render side
+    by side, each scrolls independently, Tab switches focus, `c` copies with
+    a flash, `d` toggles details, narrowing the terminal switches to a
+    stacked layout, and Enter returns with exit 0. Hermetic and deterministic
+    (sample content, no network)."""
+    log("result probe: split panes scroll/copy/details + responsive resize")
+    failed = False
+    rows, cols = 30, 100
+    pid, fd = spawn_probe(rows, cols)
+    session = b""
+    try:
+        data = capture(fd, ANCHOR_RESULT)
+        session += data
+        frame = normalize_rows(render_frame(data.decode("utf-8", "replace"), rows, cols))
+        joined = "\n".join(frame)
+        errors = []
+        for needle in ("UNSCRIPT / REWORKED", "[c] copy", "[C] copy", "ORIGINAL 1–", "REWORKED 1–"):
+            if needle not in joined:
+                errors.append(f"missing {needle!r}")
+        orig_rows = [i for i, row in enumerate(frame) if "ORIGINAL" in row and "\u250c" in row]
+        rew_rows = [i for i, row in enumerate(frame) if "REWORKED" in row and "\u250c" in row]
+        if not orig_rows or not rew_rows:
+            errors.append("both panels must render")
+        elif orig_rows[0] != rew_rows[0]:
+            errors.append("wide terminal should pair panels on the same row")
+        if any(len(row) > cols for row in frame):
+            errors.append(f"row wider than {cols} cols")
+        if errors:
+            failed = True
+            for err in errors:
+                log(f"FAIL result probe: {err}")
+
+        # Each panel has its own scroll state: scroll the focused REWORKED
+        # panel first (initial focus), then switch focus and scroll ORIGINAL.
+        data = send(fd, b"\x1b[B\x1b[B\x1b[B")
+        session += data
+        if "REWORKED 4–" not in plain(data).decode("utf-8", "replace"):
+            failed = True
+            log("FAIL result probe: REWORKED panel did not scroll (own state)")
+        data = send(fd, b"\t")
+        session += data
+        data = send(fd, b"\x1b[B")
+        session += data
+        if "ORIGINAL 2–" not in plain(data).decode("utf-8", "replace"):
+            failed = True
+            log("FAIL result probe: ORIGINAL panel did not scroll after focus switch")
+
+        # Copy the focused (ORIGINAL) panel: real OSC 52 write + honest flash.
+        data = send(fd, b"c")
+        session += data
+        if "Copied original" not in plain(data).decode("utf-8", "replace"):
+            failed = True
+            log("FAIL result probe: copy flash missing after [c]")
+
+        # Details view and back.
+        data = send(fd, b"d")
+        session += data
+        text = plain(data).decode("utf-8", "replace")
+        if "KNOWLEDGE APPLIED" not in text or "back to panes" not in text:
+            failed = True
+            log("FAIL result probe: details view did not render with its hint")
+        data = send(fd, b"d")
+        session += data
+        text = plain(data).decode("utf-8", "replace")
+        if "ORIGINAL" not in text or "REWORKED" not in text:
+            failed = True
+            log("FAIL result probe: did not return to the split panes from details")
+
+        # Responsive: narrow the terminal => side-by-side becomes stacked.
+        set_size(fd, rows, 46)
+        time.sleep(0.6)
+        data = drain(fd, 1.0)
+        session += data
+        frame46 = normalize_rows(render_frame(session.decode("utf-8", "replace"), rows, 46))
+        orig46 = [i for i, row in enumerate(frame46) if "ORIGINAL" in row and "\u250c" in row]
+        rew46 = [i for i, row in enumerate(frame46) if "REWORKED" in row and "\u250c" in row]
+        if not orig46 or not rew46:
+            failed = True
+            log("FAIL result probe: panels vanished after resize to 46 cols")
+        elif orig46[0] >= rew46[0]:
+            failed = True
+            log("FAIL result probe: narrow terminal should stack REWORKED below ORIGINAL")
+        if any(len(row) > 46 for row in frame46):
+            failed = True
+            log("FAIL result probe: row overflow after resize to 46 cols")
+
+        # Return gate: Enter finishes and the probe exits 0.
+        data = send(fd, b"\r")
+        session += data
+        code = wait_exit(pid)
+        if code != 0:
+            failed = True
+            log(f"FAIL result probe: Enter exit code {code!r} (want 0)")
+        if b"MaxListenersExceededWarning" in session:
+            failed = True
+            log("FAIL result probe: MaxListenersExceededWarning in session")
+    finally:
+        finish(pid, fd)
+    return 1 if failed else 0
+
+
 def run_live_flow() -> int:
     """One interactive session: landing -> doctor -> return -> exit. Asserts
     navigation works, the doctor page renders with its return gate, no
@@ -489,6 +610,9 @@ def main() -> int:
     if result != 0:
         return result
     result = run_config_snapshot(args.record)
+    if result != 0:
+        return result
+    result = run_result_probe()
     if result != 0:
         return result
     if args.live and not args.record:

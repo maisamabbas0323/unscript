@@ -729,3 +729,51 @@ self-gate, plus a double-prompt with the landing gate.
 | integration: unset → WARN + Setup needed, exit 0 | pass                                            |
 | integration: configured → redacted labels only   | pass (no secret substrings in stdout or stderr) |
 | pty config-80x36                                 | every line ≤ 80 cols, version footer present    |
+
+## Split result page (Step 5.13) — scrollable compare + copy + responsiveness
+
+The `humanize` result is no longer one tall document: it's a split-screen
+compare the user can actually read and take away.
+
+### What changed
+
+- **`src/cli/ui/resultPage.ts` (new)** — `compareResultPage` renders ORIGINAL
+  and REWORKED as two bordered panels with **independent scroll state** (each
+  keeps its own `top`, its own `1–22 of 59` indicator, and its own PgUp/Home
+  scroll). Wide terminals (≥ 53 columns) pair the panels side by side; narrow
+  terminals stack them; every paint and every terminal `resize` recomputes the
+  geometry and re-wraps the text, so resizing mid-page reflows live with no
+  overflow. Pure helpers (`computeResultLayout`, `renderPane`, `osc52Sequence`)
+  are unit-tested in `tests/result-page.test.ts` (11 cases: geometry across
+  widths/heights, pane frames exactly `inner + 2` wide, `[c]`/`[C]` copy chips,
+  OSC 52 base64 payload).
+- **Copy is real.** `c` writes the focused panel's raw text to the terminal
+  clipboard via the OSC 52 sequence (dependency-free, no helper binary) and
+  `C` copies the other panel; the footer flashes the honest confirmation
+  `✓ Copied <panel> — sent to terminal clipboard`. The raw source text is
+  copied, never the wrapped render.
+- **Details view.** `d` toggles the full-width provenance document
+  (KNOWLEDGE APPLIED / SOURCES / CHECK / CONFLICTS / NOTES — the sections the
+  old single-column page showed below the boxes) as a scrollable page with its
+  own hint row and back key.
+- **`transform.ts` refactor** — `renderColumns`/`renderResult` removed;
+  `renderResultDetails` builds the details document and `resultSummary`
+  supplies the two-line header (DONE stats + selection). `pager.ts` keeps
+  serving the `knowledge` page unchanged.
+- **Hermetic pty probe** — `tests/pty/probe-result.mjs` drives the **real**
+  `compareResultPage` component on a pty (`run.py: run_result_probe`): both
+  panels render paired, each scrolls independently, Tab switches focus, `c`
+  flashes the copy confirmation, `d` opens/closes details, `set_size` to 46
+  columns flips the split to stacked with no overflow, and Enter exits 0.
+  Runs in every `uicheck` mode; no network, no env, no snapshots.
+
+### Verified
+
+| Check                                              | Result                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------------- |
+| `npm test`                                         | 188/188 pass (+11 result-page unit cases)                         |
+| `npm run uicheck` (golden + probe)                 | pass — 5 landing + config snapshots unchanged, result probe green |
+| `npm run uicheck --live`                           | pass — landing → doctor → return still green                      |
+| probe: wide 100×30 pairing / narrow 46×30 stacked  | pass, no row exceeds the terminal width                           |
+| probe: per-pane scroll, copy flash, details toggle | pass, no MaxListenersExceededWarning                              |
+| `tsc --noEmit` / `eslint .` / `prettier --check`   | pass                                                              |

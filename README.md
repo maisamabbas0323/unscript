@@ -94,8 +94,11 @@ exits, `Ctrl+C` interrupts.
 4. **Humanization level** — living list (Light, Natural, Human, Deep, …).
 5. **Transform** — retrieval → Gemini (`gemini-3.1-flash-lite`) → deterministic
    preservation validation.
-6. **Result** — original vs. reworked text, validation report, conflicts, notes,
-   real elapsed time, and knowledge provenance.
+6. **Result** — a split-screen compare of original vs. reworked: each panel
+   scrolls independently with its own `[c]`/`[C]` copy buttons (terminal
+   clipboard via OSC 52), `d` opens the validation/conflict/notes report, and
+   the layout reflows between side-by-side and stacked as you resize the
+   terminal.
 
 Exit codes: `0` success, `1` operational error, `2` usage error,
 `130` interrupted (Ctrl+C).

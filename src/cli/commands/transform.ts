@@ -5,7 +5,7 @@ import { promptSelect, promptAnyKey, type Choice } from '../ui/menu.js';
 import { promptMultiline } from '../ui/input.js';
 import { liveStatus } from '../ui/live.js';
 import { scrollablePage } from '../ui/pager.js';
-import { fitWidth } from '../ui/screen.js';
+import { compareResultPage } from '../ui/resultPage.js';
 import { OperationalError, EXIT_INTERRUPTED, EXIT_OK } from '../../core/errors.js';
 import {
   loadRuntimeConfig,
@@ -23,7 +23,7 @@ import {
   type RetrievalResult,
 } from '../../knowledge/retrieval.js';
 import { detectRuleConflicts } from '../../agent/context.js';
-import { wrap, terminalWidth, cellWidth } from '../../utils/text.js';
+import { wrap, terminalWidth } from '../../utils/text.js';
 import { debugLog } from '../../utils/log.js';
 
 /**
@@ -189,71 +189,30 @@ function sourceLines(result: TransformationResult): string[] {
   });
 }
 
-/**
- * Two side-by-side boxes (ORIGINAL | REWORKED).
- *
- * Both boxes share one row count so the divider stays aligned and no
- * line exceeds the terminal width. ORIGINAL is the quiet reference
- * (muted border); REWORKED carries the accent — the rewritten text is
- * the result, so it is the visible emphasis.
- */
-function renderColumns(
-  headers: [string, string],
-  bodies: [string, string],
-  width: number,
-): string[] {
-  // inner content width per box: two boxes (inner+2 each) + 1-cell gap.
-  const inner = Math.max(8, Math.floor((width - 5) / 2));
-  const edgeLeft = theme.muted;
-  const edgeRight = theme.accent;
-  const filler = (line: string): string => {
-    const cells = cellWidth(line);
-    if (cells > inner) return fitWidth(line, inner);
-    return `${line}${' '.repeat(inner - cells)}`;
-  };
-  const split = (text: string): string[] => {
-    const wrapped = wrap(text, inner);
-    return wrapped === '' ? [] : wrapped.split('\n');
-  };
-  const left = split(bodies[0]);
-  const right = split(bodies[1]);
-  const rows = Math.max(left.length, right.length);
-  const head = (label: string, edge: (text: string) => string, primary: boolean): string => {
-    const fill = Math.max(1, inner - 3 - cellWidth(label));
-    const name = primary ? theme.bright(label) : theme.muted(label);
-    return `${edge('┌')}${theme.muted('─')} ${name} ${theme.muted('─'.repeat(fill))}${edge('┐')}`;
-  };
-  const row = (index: number): string =>
-    `${edgeLeft('│')}${filler(left[index] ?? '')}${edgeLeft('│')} ` +
-    `${edgeRight('│')}${filler(right[index] ?? '')}${edgeRight('│')}`;
-  const bottom =
-    `${edgeLeft('└')}${theme.muted('─'.repeat(inner))}${edgeLeft('┘')} ` +
-    `${edgeRight('└')}${theme.muted('─'.repeat(inner))}${edgeRight('┘')}`;
-
-  const out: string[] = [
-    `${head(headers[0], edgeLeft, false)} ${head(headers[1], edgeRight, true)}`,
-  ];
-  for (let i = 0; i < rows; i++) out.push(row(i));
-  out.push(bottom);
-  return out;
-}
-
-function renderResult(result: TransformationResult): string[] {
-  const width = pageWidth();
-  const lines: string[] = ['', ...pageHeader('Reworked', width), ''];
-
-  lines.push(
-    ...renderColumns(['ORIGINAL', 'REWORKED'], [result.requestText, result.transformedText], width),
-  );
-
-  lines.push(
-    '',
+/** Header summary shown above the panes: real stats, never padding. */
+function resultSummary(result: TransformationResult): string[] {
+  const selection = [
+    result.applied.contentTypeTitle,
+    result.applied.toneTitle,
+    result.applied.levelTitle,
+  ].filter((title): title is string => title !== undefined && title !== '');
+  return [
     `  ${theme.success(sym.check)} DONE  ${result.applied.ruleIds.length} rule(s) · ` +
       `${result.applied.patternIds.length} pattern(s) · ` +
       `${result.applied.sourceCount} source(s) · ${result.elapsedMs}ms real time`,
-  );
+    `  ${theme.muted('Selection')}  ${
+      selection.length > 0 ? theme.bright(selection.join(' · ')) : theme.muted('unknown')
+    }`,
+  ];
+}
 
-  lines.push(...section('KNOWLEDGE APPLIED'));
+/**
+ * The detail document behind the result page's details view — the real
+ * provenance, checks, conflicts, and notes (the same sections the old
+ * single-column result page showed below the two text boxes).
+ */
+function renderResultDetails(result: TransformationResult): string[] {
+  const lines: string[] = [...section('KNOWLEDGE APPLIED')];
   lines.push(...knowledgeAppliedLines(result));
 
   lines.push(...section('SOURCES'));
@@ -376,7 +335,12 @@ async function runWizard(debug: boolean, config: RuntimeConfig): Promise<number>
     );
     rework.stop();
 
-    const page = await scrollablePage(renderResult(result));
+    const page = await compareResultPage({
+      original: result.requestText,
+      reworked: result.transformedText,
+      summary: resultSummary(result),
+      details: renderResultDetails(result),
+    });
     return page.interrupted ? EXIT_INTERRUPTED : EXIT_OK;
   } finally {
     connect.stop();

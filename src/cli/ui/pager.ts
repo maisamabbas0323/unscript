@@ -12,7 +12,7 @@ import {
 import { cellWidth } from '../../utils/text.js';
 
 /**
- * Scrollable full-screen document page (result, knowledge inspector).
+ * Scrollable full-screen document page (knowledge inspector).
  *
  * The document fills the cleared screen top-down and is always clipped to
  * the real terminal height; the first viewport shows rows 1..N so the

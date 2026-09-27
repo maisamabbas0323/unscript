@@ -54,7 +54,10 @@ skip or fail integration coverage.
   (the red shadow-style "UNSCRIPT" logo + branded wordmark fallback, page headers), `terminal.ts` (frame width/cursor
   helpers), `screen.ts` (absolute-row region paint/update, cursor helpers),
   `menu.ts` (interactive select + any-key prompts on node:readline raw mode),
-  `pager.ts` (scrollable full-screen document page for results), `input.ts`
+  `pager.ts` (scrollable full-screen document page for `knowledge`),
+  `resultPage.ts` (the transform-result page: two independently scrollable
+  ORIGINAL/REWORKED panels with per-pane OSC 52 copy, a details view, and a
+  responsive side-by-side/stacked layout), `input.ts`
   (multiline text entry), `status.ts` (config status chips), `live.ts` (single
   elapsed live status line).
 - Config: `src/config/index.ts` — dotenv `.env` loading + typed validation
@@ -166,10 +169,15 @@ load-bearing details.
 - Moving into a page (humanize/transform/knowledge/doctor/help/version) clears
   the screen again and renders that page alone — no logo, no leftover menu, no
   stacked content. Exiting clears once more and prints `Bye.` / `Interrupted.`
-  / `Cancelled.`. The transform **result** and **knowledge** pages are
-  scrollable documents (`pager.ts`): they start at the top of the document on
-  any terminal height, scroll with ↑ ↓ / PgUp / PgDn / Home / End, and own
-  their return gate (footer: "Press Enter or Esc to return"), so the landing
+  / `Cancelled.`. The transform **result** page is a split-screen compare
+  (`resultPage.ts`): ORIGINAL and REWORKED render as two panels that scroll
+  **independently** (each keeps its own scroll offset), side by side on wide
+  terminals and stacked on narrow ones — the layout re-adapts live on
+  `resize`. `Tab` (or ← →) switches focus; `c` copies the focused panel and
+  `C` the other via the terminal clipboard (OSC 52), with an honest
+  "Copied … — sent to terminal clipboard" flash; `d` toggles the details view
+  (provenance/checks/sources as a scrollable full-width document). Both pages
+  own their return gate (footer: "Enter or Esc to return"), so the landing
   does not re-prompt for them. Doctor/help/version and cancelled wizard steps
   return through the landing's overlay `promptAnyKey` gate.
 - **`promptAnyKey` is an overlay, never a wipe**: it pins its label to the
@@ -180,9 +188,10 @@ load-bearing details.
 - Interactive frames must never exceed the real terminal width: measure
   `process.stdout.columns` directly (`frameWidth`), not the clamped
   `terminalWidth()`. Every rendered line is bounded so redraw cursor math
-  (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (Result/knowledge
-  pages are paged documents whose every line is also fitted to `realWidth()`;
-  doctor/help use `terminalWidth()` clamping.)
+  (`\x1b[N A` + `\x1b[J`) stays correct in narrow terminals. (The result page
+  measures `realWidth()` for its panels and fits every pane/footer line;
+  the knowledge page is a paged document whose every line is also fitted to
+  `realWidth()`; doctor/help use `terminalWidth()` clamping.)
 - `promptMultiline` (text entry) uses a projected editor on a TTY: the whole
   buffer is live and the terminal is never the source of truth. **Enter =
   Continue**: it submits the whole buffer (one trailing empty line dropped), or
