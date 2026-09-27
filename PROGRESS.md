@@ -645,3 +645,39 @@ self-gate, plus a double-prompt with the landing gate.
 | `npm run uicheck:record`                                       | recorded landing-80x24 / 80x28 / 100x34 / nocolor                |
 | `python3 tests/pty/run.py --live`                              | landing → doctor → return → exit, no MaxListenersExceededWarning |
 | pty 80×24 / 80×28 / 100×34                                     | compact header / 6-row wordmark / full logo — none overflow      |
+
+## Landing humanized (Step 5.11)
+
+### What changed
+
+- **Warm, conversational invitation.** "What would you like to do?" became
+  "What shall we do today?" — the prompt matches the home screen's voice
+  ("writing, reworked.") instead of reading like a form label.
+- **One-line human asides in the detail pane.** `Choice` gained an optional
+  `aside` field; the live detail pane now renders the heading, the full
+  description, and a single instant-rule aside per choice, re-rendered on
+  every arrow. Every aside is an honest behavior note — "your numbers,
+  dates, quotes, and URLs are verified after the rewrite", "read-only — the
+  rulebook behind every rewrite, from Sanity", "local checks always run;
+  live ones only when credentials are set" — written as a second-person
+  reassurance, not marketing.
+- **One composed block.** The detail pane heading and the key hints now
+  share the menu's 2-space left margin; the heading's full-width rule
+  doubles as its separator (the old blank line went away) so the taller
+  pane still leaves the full 6-item menu visible on the 100×34 logo tier,
+  and the 80×28 wordmark tier keeps its pre-change "1–4 of 6" budget.
+  `theme.info` (cyan) gained its first real job: marking the aside dash.
+- **Harness live-flow bug fixed.** `run_live_flow` spawned `(100, 34)` as
+  rows, cols — the interactive session was silently exercising a
+  skinny 34-column terminal. It now drives the flagship 100×34 (rows,
+  cols) like the golden logo case, and asserts the aside re-renders when
+  the selection changes.
+
+### Verified
+
+| Check                                                          | Result                                                                        |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `npx tsc --noEmit` / `npx eslint .` / `npx prettier --check .` | pass                                                                          |
+| `npm test` (build-first integration)                           | pass (full suite)                                                             |
+| `npm run uicheck` (golden + live, 100×34 flagship)             | pass — snapshots re-recorded, live aside-render asserted                      |
+| pty 100×34 / 80×28 / 80×24                                     | 6-item menu / 1–4 of 6 / 6-item menu — no overflow, no indicator on logo tier |

@@ -126,8 +126,12 @@ load-bearing details.
   active item; inactive items keep the same indent so the column never jumps),
   and `SelectOptions.escLabel` names Esc as `back` (wizard steps) or `exit`
   (home screen). Below the list a **live detail pane** shows the full
-  description of the active choice (re-rendered on every arrow), fed from
-  `Choice.description` — the item row itself stays a single clean line.
+  description of the active choice plus a one-line human aside (re-rendered
+  on every arrow), fed from
+  `Choice.description` / `Choice.aside` — the item row itself stays a single
+  clean line. Asides are honest behavior notes, never invented promises;
+  the pane's rule-headed divider doubles as its separator so the full menu
+  still fits on the logo tier.
   The status line under the identity block is real configuration
   (`statusLine` in `status.ts`, from `loadRuntimeConfig`) — chips name
   exactly the variable that is missing when something is unset.

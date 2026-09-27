@@ -21,8 +21,10 @@ import { runTransform, runKnowledge } from './transform.js';
  * 10-row logo at ≥ 34 rows, the 6-row block wordmark at 28–33 rows, and
  * a compact `UNSCRIPT` brand line below that. The status line under the
  * identity block is real configuration (Context MCP / Gemini), not
- * decoration. Selecting a category clears the terminal again and shows
- * that page on its own — the logo is never duplicated below earlier
+ * decoration. The invitation is warm and conversational, and every menu
+ * choice carries an honest one-line aside about what actually happens —
+ * nothing invented. Selecting a category clears the terminal again and
+ * shows that page on its own — the logo is never duplicated below earlier
  * content.
  */
 
@@ -34,30 +36,40 @@ const CHOICES: Choice<LandingChoice>[] = [
     label: 'Humanize text',
     description:
       'Rework your writing against the Sanity knowledge base — pick a content type, tone, and humanization level, then read the result with full provenance.',
+    aside: 'your numbers, dates, quotes, and URLs are verified after the rewrite',
   },
   {
     id: 'knowledge',
     label: 'Inspect knowledge',
     description:
       'See the writing rules, patterns, sources, and user decisions the knowledge base holds for your content.',
+    aside: 'read-only — the rulebook behind every rewrite, from Sanity',
   },
   {
     id: 'doctor',
     label: 'Inspect environment',
     description:
       'Run real local checks and, when credentials are configured, clearly labeled live checks of the Context MCP and Gemini.',
+    aside: 'local checks always run; live ones only when credentials are set',
   },
   {
     id: 'help',
     label: 'Help',
     description: 'List commands, exit codes, and configuration steps for Unscript.',
+    aside: 'a cheat sheet for commands, exit codes, and setup steps',
   },
   {
     id: 'version',
     label: 'Version',
     description: 'Show the installed Unscript version and runtime details.',
+    aside: 'the release you are running, straight from package.json',
   },
-  { id: 'exit', label: 'Exit', description: 'Leave the interactive home screen.' },
+  {
+    id: 'exit',
+    label: 'Exit',
+    description: 'Leave the interactive home screen.',
+    aside: 'nothing you type is saved — write fresh each time',
+  },
 ];
 
 /** The identity block is measured at the real terminal width (the logo is
@@ -89,8 +101,8 @@ function landingTop(): string[] {
       ? introBlock(identityWidth(), { top: 1, left: 2, compact: true })
       : [`  ${theme.brand('UNSCRIPT')}`];
   return tall || mid
-    ? [...intro, '', `  ${status}`, '', '  ' + theme.bright('What would you like to do?')]
-    : [...intro, `  ${status}`, '  ' + theme.bright('What would you like to do?')];
+    ? [...intro, '', `  ${status}`, '', `  ${theme.bright('What shall we do today?')}`]
+    : [...intro, `  ${status}`, `  ${theme.bright('What shall we do today?')}`];
 }
 
 export async function runLanding(debug: boolean): Promise<number> {

@@ -42,7 +42,7 @@ SCRUB = {
     "GEMINI_API_KEY": "",
 }
 
-ANCHOR_LANDING = "What would you like to do?"
+ANCHOR_LANDING = "What shall we do today?"
 ANCHOR_DOCTOR = "UNSCRIPT / DOCTOR"
 
 
@@ -355,7 +355,7 @@ def run_live_flow() -> int:
     listeners leak (no MaxListenersExceededWarning), and Esc exits 0."""
     log("live flow: landing -> doctor -> return -> exit")
     failed = False
-    rows, cols = 100, 34
+    rows, cols = 34, 100
     pid, fd = spawn_cli(rows, cols)
     session = b""
     try:
@@ -363,6 +363,10 @@ def run_live_flow() -> int:
         session += data
         data = send(fd, b"\x1b[B")  # -> Inspect knowledge
         session += data
+        text = plain(data).decode("utf-8", "replace")
+        if "rulebook behind every rewrite" not in text:
+            failed = True
+            log("FAIL live: detail pane aside did not re-render for Inspect knowledge")
         data = send(fd, b"\x1b[B")  # -> Inspect environment
         session += data
         data = send(fd, b"\r")  # select doctor

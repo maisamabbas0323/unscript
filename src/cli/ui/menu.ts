@@ -26,8 +26,9 @@ import { wrap, cellWidth } from '../../utils/text.js';
  * active item); inactive items are aligned with the same indent so the
  * column never jumps. When the list is taller than the screen it scrolls
  * with an "N–M of K" position line. Below the list a live detail pane
- * shows the full description of the active choice, re-rendered on every
- * arrow so there is always a focused preview worth reading.
+ * shows the heading, the full description, and a short human aside of the
+ * active choice, re-rendered on every arrow so there is always a focused
+ * preview worth reading.
  */
 
 export interface Choice<T extends string> {
@@ -37,6 +38,8 @@ export interface Choice<T extends string> {
   note?: string;
   /** Long-form description shown live in a detail pane under the list. */
   description?: string;
+  /** Short human aside under the description — an honest behavior note. */
+  aside?: string;
 }
 
 export type SelectResult<T extends string> =
@@ -85,23 +88,37 @@ export function promptSelect<T extends string>(
     ];
 
     /**
-     * Live detail pane for the active choice: a rule-joined heading plus
-     * the full description wrapped (capped), re-rendered on every arrow.
-     * Empty when the active choice has no description.
+     * Live detail pane for the active choice: a rule-joined heading, the
+     * full description wrapped (capped), and a short human aside (capped)
+     * that states an honest behavior note. Re-rendered on every arrow.
+     * Empty when the active choice has no description or aside.
      */
     const detailLines = (): string[] => {
       const choice = choices[selected];
-      const description = choice?.description;
-      if (choice === undefined || description === undefined || description === '') return [];
+      if (choice === undefined) return [];
       const w = width();
-      const body = wrap(description, Math.max(16, w - 6))
-        .split('\n')
-        .slice(0, 4)
-        .map((line) => `  ${theme.muted(line)}`);
+      const wrapAt = Math.max(16, w - 6);
+      const body: string[] = [];
+      const description = choice.description;
+      if (description !== undefined && description !== '') {
+        for (const line of wrap(description, wrapAt).split('\n').slice(0, 3)) {
+          body.push(`  ${theme.muted(line)}`);
+        }
+      }
+      const aside = choice.aside;
+      if (aside !== undefined && aside !== '') {
+        for (const line of wrap(aside, wrapAt).split('\n').slice(0, 2)) {
+          body.push(`  ${theme.info(sym.rule)} ${theme.muted(line)}`);
+        }
+      }
+      if (body.length === 0) return [];
       const marker = theme.muted(sym.rule);
       const head = `${marker.repeat(2)} ${theme.accent(choice.label.toUpperCase())} ${marker}`;
-      const pad = Math.max(0, w - cellWidth(head));
-      return ['', fitWidth(`${head}${marker.repeat(pad)}`, w), ...body];
+      // Exact pad: heading + pad == w (the rule itself is the separator,
+      // replacing the old blank line so the full menu still fits on the
+      // logo tier).
+      const pad = Math.max(0, w - 2 - cellWidth(head));
+      return [`  ${head}${marker.repeat(pad)}`, ...body];
     };
 
     /** Rendered line budget below the header; never exceeds the terminal height. */
@@ -134,9 +151,9 @@ export function promptSelect<T extends string>(
         .map((choice, index) => itemRow(choice, start + index === selected, width()));
       const hint = hintsHtml(hintGroups(), width());
       if (visible < choices.length) {
-        hint.push(theme.muted(`  ${start + 1}–${end} of ${choices.length}`));
+        hint.push(`${start + 1}–${end} of ${choices.length}`);
       }
-      return ['', ...items, '', ...hint.map((line) => theme.muted(line)), ...detailLines()];
+      return ['', ...items, '', ...hint.map((line) => `  ${theme.muted(line)}`), ...detailLines()];
     };
 
     /** Incremental repaint: only the changed selection rows are redrawn. */

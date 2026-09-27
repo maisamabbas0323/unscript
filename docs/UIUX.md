@@ -51,7 +51,11 @@ plus structural invariants) and the unit suite.
 
 - Exactly one indicator per menu row: `›` accents the active item, and
   inactive items keep the same indent so the column never jumps. Below the
-  list a live detail pane shows the active choice's description.
+  list a live detail pane shows the active choice's heading, its full
+  description, and a one-line human aside (`Choice.aside`) — an honest
+  behavior note, never an invented promise. Heading and hint rows share the
+  menu's left margin; the pane's rule-headed divider separates it without
+  stealing a row from the choice list.
 - Esc semantics are explicit in every menu (`back` for wizard steps,
   `exit` on the home screen). Ctrl+C interrupts (exit 130).
 - Editor (`promptMultiline`): Enter continues (whole buffer), Ctrl+J /

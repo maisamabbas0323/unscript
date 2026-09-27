@@ -15,7 +15,7 @@
 
   ! Context MCP unset · ! Gemini unset · v0.1.0
 
-  What would you like to do?
+  What shall we do today?
 
   › Humanize text
     Inspect knowledge
@@ -24,9 +24,9 @@
     Version
     Exit
 
-↑ ↓ · move   Enter · select   Esc · exit   Ctrl+C · interrupt
-
-── HUMANIZE TEXT ─────────────────────────────────────────────────────────────
+  ↑ ↓ · move   Enter · select   Esc · exit   Ctrl+C · interrupt
+  ── HUMANIZE TEXT ───────────────────────────────────────────────────────────
   Rework your writing against the Sanity knowledge base — pick a content
   type, tone, and humanization level, then read the result with full
   provenance.
+  ─ your numbers, dates, quotes, and URLs are verified after the rewrite
