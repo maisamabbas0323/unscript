@@ -140,7 +140,12 @@ load-bearing details.
   `onStep` after each completed phase; `runTransformation` fires `onStage` at
   retrieving/reworking/checking; doctor fires a step as each check completes)
   and the time shown is a single real elapsed counter — one number, never
-  duplicated. After the humanize selections finish, the rework collapses into
+  duplicated. While it runs, the live line owns the whole screen (the flow
+  clears first and menus/pages render only after `stop()`), and each paint
+  erases everything below it — stray stderr/debug output can never leave
+  wrapped remnants next to or under the status (regression guard: agent
+  debug logs use compact slug labels, never serialized request objects).
+  After the humanize selections finish, the rework collapses into
   that one line and then only the result page remains. `knowledge` has **no
   selection menus** — it inspects the first content type/tone/level straight
   from Sanity and goes directly to its page (writing patterns, transformation

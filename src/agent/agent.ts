@@ -102,7 +102,11 @@ export async function runTransformation(
     levelSlug: request.levelSlug,
   };
 
-  debugLog('retrieving knowledge from Context MCP', retrievalRequest);
+  // Compact slug label only — the raw request object would dump a long JSON
+  // line onto the terminal and corrupt the live-status screen.
+  debugLog(
+    `retrieving knowledge for ${retrievalRequest.contentTypeSlug}/${retrievalRequest.toneSlug}/${retrievalRequest.levelSlug}`,
+  );
   onStage?.('retrieving');
   const retrieval = await retrieveKnowledge(deps.mcp, retrievalRequest);
   const context = assembleAgentContext(retrievalRequest, retrieval);
