@@ -176,7 +176,10 @@ load-bearing details.
   are always the **same height and width**, sized **according to the
   contents** (short texts shrink both panels together), side by side on wide
   terminals and stacked on narrow ones — the layout re-adapts live on
-  `resize`. Below them, KNOWLEDGE APPLIED and SOURCES are visible on the main
+  `resize`. Leftover rows become **responsive gaps** between the header, the
+  panels, the knowledge cards, and the footer (all gaps collapse on tight
+  terminals), so the components breathe instead of stacking. Below the panels,
+  KNOWLEDGE APPLIED and SOURCES are visible on the main
   screen as boxed cards (real retrieval provenance: rules, patterns,
   preservation count, source documents), `Tab` (or ← →) cycles focus among
   ORIGINAL → REWORKED → KNOWLEDGE, and each region scrolls independently. Copy

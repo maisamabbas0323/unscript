@@ -96,9 +96,15 @@ plus structural invariants) and the unit suite.
 - **Knowledge is visible, not hidden**: KNOWLEDGE APPLIED and SOURCES render
   on the main screen as boxed cards below the panels — rules and patterns
   grouped by kind and tagged with their real retrieval source, the
-  preservation-rule count, and the source documents. `Tab` (or ← →) cycles
+  preservation-rule count, and the source documents, with one blank row
+  separating the two cards. `Tab` (or ← →) cycles
   focus ORIGINAL → REWORKED → KNOWLEDGE; each of the three regions scrolls
   with ↑↓/PgUp/PgDn/Home/End and the focused region carries the accent border.
+- **Responsive structural gaps**: leftover rows become breathing room between
+  the header, the compare panels, the knowledge cards, and the footer — one
+  row after the header, a growing (capped) separator before the cards, and the
+  rest above the footer. Every gap collapses to zero when the terminal is
+  tight, so content is never clipped.
 - Fully responsive: at ≥ 53 columns the panels sit side by side; below that
   they stack vertically. Panel budgets, card rows, and the wrapped text all
   recompute on every paint and on every terminal `resize`, so resizing

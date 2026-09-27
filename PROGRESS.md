@@ -830,6 +830,12 @@ contentH, knowledgeH)` shrinks header/footer before the panel region,
   gives the cards their content height (capped at half the middle region),
   and never paints a row wider than the terminal or past its bottom row —
   side-by-side ≥ 53 columns, stacked below, reflowing live on resize.
+- **Responsive structural gaps.** Leftover rows become breathing room between
+  the header, the compare panels, the knowledge cards, and the footer — one
+  row after the header, a growing (capped) separator before the cards, the
+  rest above the footer — and every gap collapses to zero when the screen is
+  tight, so content is never clipped. One blank row also separates the two
+  cards so the boxes read as distinct components.
 - **Tests follow the new contract.** `tests/result-page.test.ts` covers the
   content-aware layout, equal budgets, card rendering and width invariants;
   the pty probe (`tests/pty/probe-result.mjs` + `run.py`) drives the real

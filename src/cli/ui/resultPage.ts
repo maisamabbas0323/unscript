@@ -15,7 +15,9 @@ import { wrap, cellWidth } from '../../utils/text.js';
  * stacked below), so no line ever overflows the frame.
  *
  * The screen is one dashboard: header → compare panes → knowledge cards →
- * footer. KNOWLEDGE APPLIED and SOURCES are visible on the main screen as
+ * footer, separated by **responsive gaps** (leftover rows become breathing
+ * room between the components; all gaps collapse on tight terminals).
+ * KNOWLEDGE APPLIED and SOURCES are visible on the main screen as
  * boxed cards (real retrieval provenance, never invented); `d` opens the
  * full details document (CHECK / CONFLICTS / NOTES) as a scrollable page.
  *
@@ -64,6 +66,12 @@ export interface ResultLayout {
   paneBudget: number;
   /** Rows allocated to the KNOWLEDGE APPLIED + SOURCES card region. */
   knowledgeRows: number;
+  /** Blank rows between the header and the compare panels (responsive). */
+  gapHeader: number;
+  /** Blank rows between the compare panels and the knowledge cards. */
+  gapMiddle: number;
+  /** Blank rows between the knowledge cards and the footer. */
+  gapFooter: number;
   /** Rows available for the full details document (header/footer excluded). */
   middle: number;
   headerRows: number;
@@ -79,6 +87,11 @@ export interface ResultLayout {
  * height of the knowledge cards. Panels are content-aware: both get the same
  * budget, small texts shrink the panels and free rows for the cards, and the
  * minimums keep every render sane even on tiny terminals.
+ *
+ * Leftover rows become **responsive gaps** between the structural regions —
+ * one row after the header, a growing (capped) separator between the compare
+ * panels and the knowledge cards, and the rest above the footer. When the
+ * terminal is tight every gap collapses to zero, so content is never clipped.
  */
 export function computeResultLayout(
   width = realWidth(),
@@ -86,8 +99,8 @@ export function computeResultLayout(
   contentH = 0,
   knowledgeH = 0,
 ): ResultLayout {
-  const sideBySide = width >= 53;
-  const inner = sideBySide ? Math.max(1, Math.floor((width - 5) / 2)) : Math.max(1, width - 2);
+  let sideBySide = width >= 53;
+  let inner = sideBySide ? Math.max(1, Math.floor((width - 5) / 2)) : Math.max(1, width - 2);
 
   let footerRows = 2;
   let headerRows = 4;
@@ -106,6 +119,14 @@ export function computeResultLayout(
   }
   if (middle < 2) middle = 2;
 
+  // Degenerate narrow-but-short terminals cannot fit two stacked panels plus
+  // a knowledge row (2 blocks + gap + 1 needs 8 rows). Fall back to paired
+  // panels so the whole frame stays inside the terminal — never clipped.
+  if (!sideBySide && middle < 10) {
+    sideBySide = true;
+    inner = Math.max(1, Math.floor((width - 5) / 2));
+  }
+
   // The cards get their content height, at least a readable minimum and at
   // most half the middle region; the compare panels get the rest.
   const minK = sideBySide ? 3 : 2;
@@ -120,11 +141,27 @@ export function computeResultLayout(
   paneBudget = Math.max(1, Math.min(paneBudget, Math.max(contentH, 2)));
   const used = sideBySide ? paneBudget + 2 : 2 * paneBudget + 5;
   const knowledgeRows = Math.max(1, Math.min(kf, middle - used));
+
+  // Responsive structural gaps: leftover rows become breathing room between
+  // the header, the compare panels, the knowledge cards, and the footer.
+  const slack = middle - used - knowledgeRows;
+  let gapHeader = 0;
+  let gapMiddle = 0;
+  let gapFooter = 0;
+  if (slack > 0) {
+    gapHeader = 1;
+    const rest = slack - gapHeader;
+    gapMiddle = Math.min(3, Math.max(0, Math.floor(rest * 0.6)));
+    gapFooter = Math.max(0, rest - gapMiddle);
+  }
   return {
     sideBySide,
     inner,
     paneBudget,
     knowledgeRows,
+    gapHeader,
+    gapMiddle,
+    gapFooter,
     middle,
     headerRows,
     footerRows,
@@ -265,7 +302,9 @@ export function buildKnowledgeCards(
     focused,
   );
 
-  return [...knowledgeCard, ...sourcesCard];
+  // One blank row separates the two cards so the components read as distinct
+  // boxes even when both fit on screen together.
+  return [...knowledgeCard, '', ...sourcesCard];
 }
 
 /** `unscript humanize` result page — see module docstring for behavior. */
@@ -367,7 +406,16 @@ export function compareResultPage(input: ComparePageInput): Promise<{ interrupte
           .slice(topDetails, topDetails + layout.middle)
           .map((line) => fitWidth(line, layout.width));
       }
-      return [...paneRegion(), ...knowledgeRegion()];
+      // Responsive structural gaps separate the compare panels, the knowledge
+      // cards, and the footer; each collapses to zero when the screen is tight.
+      const blank = (count: number): string[] => Array.from({ length: count }, () => '');
+      return [
+        ...blank(layout.gapHeader),
+        ...paneRegion(),
+        ...blank(layout.gapMiddle),
+        ...knowledgeRegion(),
+        ...blank(layout.gapFooter),
+      ];
     };
 
     const footerRows = (): string[] => {

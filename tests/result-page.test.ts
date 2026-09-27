@@ -38,6 +38,10 @@ describe('computeResultLayout', () => {
     expect(layout.middle).toBe(34 - 4 - 2);
     expect(layout.paneBudget).toBe(15); // (middle - knowledge share) - borders
     expect(layout.knowledgeRows).toBe(11); // cards get their full height
+    // full content: no slack, so no gaps are created (components stay tight)
+    expect(layout.gapHeader).toBe(0);
+    expect(layout.gapMiddle).toBe(0);
+    expect(layout.gapFooter).toBe(0);
   });
 
   it('sizes BOTH panels to the contents (equal budget) and keeps cards visible', () => {
@@ -50,12 +54,36 @@ describe('computeResultLayout', () => {
     expect(long.knowledgeRows).toBe(11);
   });
 
-  it('stacks panels on narrow terminals', () => {
+  it('grows responsive gaps between components when the screen has slack', () => {
+    const layout = computeResultLayout(100, 42, 4, 11);
+    expect(layout.middle).toBe(36);
+    expect(layout.paneBudget).toBe(4); // content-fitted
+    expect(layout.knowledgeRows).toBe(11); // cards keep their full height
+    // 1 row after the header, a capped separator before the cards, rest above
+    // the footer — and the sum never exceeds the leftover rows
+    expect(layout.gapHeader).toBe(1);
+    expect(layout.gapMiddle).toBe(3);
+    expect(layout.gapFooter).toBe(15);
+    const painted =
+      layout.headerRows +
+      layout.gapHeader +
+      (layout.sideBySide ? layout.paneBudget + 2 : 2 * layout.paneBudget + 5) +
+      layout.gapMiddle +
+      layout.knowledgeRows +
+      layout.gapFooter +
+      layout.footerRows;
+    expect(painted).toBe(layout.height);
+  });
+
+  it('collapses every gap to zero when the content fills the middle region', () => {
     const layout = computeResultLayout(40, 24, 36, 11);
     expect(layout.sideBySide).toBe(false);
     expect(layout.inner).toBe(38);
     expect(layout.paneBudget).toBe(2);
     expect(layout.knowledgeRows).toBe(9);
+    expect(layout.gapHeader).toBe(0);
+    expect(layout.gapMiddle).toBe(0);
+    expect(layout.gapFooter).toBe(0);
   });
 
   it('shrinks the header/footer before the panel region on short terminals', () => {
@@ -73,8 +101,11 @@ describe('computeResultLayout', () => {
     // painted rows never exceed the terminal height
     const painted =
       layout.headerRows +
+      layout.gapHeader +
       (layout.sideBySide ? layout.paneBudget + 2 : 2 * layout.paneBudget + 5) +
+      layout.gapMiddle +
       layout.knowledgeRows +
+      layout.gapFooter +
       layout.footerRows;
     expect(painted).toBeLessThanOrEqual(layout.height);
   });
@@ -89,6 +120,16 @@ describe('computeResultLayout', () => {
         } else {
           expect(blockWidth).toBe(width);
         }
+        // gaps never push the painted rows past the terminal height
+        const painted =
+          layout.headerRows +
+          layout.gapHeader +
+          (layout.sideBySide ? layout.paneBudget + 2 : 2 * layout.paneBudget + 5) +
+          layout.gapMiddle +
+          layout.knowledgeRows +
+          layout.gapFooter +
+          layout.footerRows;
+        expect(painted).toBeLessThanOrEqual(height);
       }
     }
   });
@@ -177,13 +218,21 @@ describe('buildKnowledgeCards', () => {
     expect(text).toContain('Product docs');
   });
 
-  it('every card row is exactly the requested width', () => {
+  it('every non-blank card row is exactly the requested width, with one gap row', () => {
     for (const width of [20, 60, 100]) {
       const rows = buildKnowledgeCards(sampleInput, width);
       expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
+      const nonBlank = rows.filter((row) => row !== '');
+      for (const row of nonBlank) {
         expect(stripAnsi(row).length).toBe(width);
       }
+      expect(rows.filter((row) => row === '')).toHaveLength(1); // card separator
+      // the gap row sits exactly between the KNOWLEDGE APPLIED and SOURCES cards
+      const sourcesIndex = rows.findIndex((row) => stripAnsi(row).includes('SOURCES'));
+      expect(sourcesIndex).toBeGreaterThan(0);
+      expect(rows[sourcesIndex - 1]).toBe(''); // gap row between the two cards
+      // the gap sits right after the KNOWLEDGE APPLIED card's bottom border
+      expect(stripAnsi(rows[sourcesIndex - 2] ?? '')).toContain('└');
     }
   });
 

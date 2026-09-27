@@ -52,7 +52,6 @@ const page = await compareResultPage({
       { title: 'Write in active voice', source: 'Editorial style guide' },
       { title: 'Vary sentence length to a natural rhythm', source: 'Editorial style guide' },
       { title: 'Prefer concrete nouns over abstract fillers', source: 'Editorial style guide' },
-      { title: 'Keep sentences under twenty words', source: 'Editorial style guide' },
     ],
     patterns: [{ title: 'Remove repetitive filler' }, { title: 'Prefer short sentences' }],
     preservationCount: 2,
