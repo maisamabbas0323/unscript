@@ -10,7 +10,7 @@
      ░               ░        ░   ░ ░          ░       ░
                                   ░
 
-                                           writing, reworked.
+  writing, reworked.
 ────────────────────────────────────────────────────────────────────────────────
 
   ! Context MCP unset · ! Gemini unset · v0.1.0

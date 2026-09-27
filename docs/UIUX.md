@@ -47,6 +47,11 @@ plus structural invariants) and the unit suite.
   rows the 6-row block wordmark (`introBlock(..., { compact: true })`);
   below that the compact `UNSCRIPT` brand line. The tier is never taller
   than the terminal, so the menu below never scrolls off screen.
+- The brand tagline under the logo is a **single row pinned to the left
+  edge** — `writing, reworked.` with `writing,` bold and one accent pop on
+  `reworked.` — aligned to the block's left margin (never centered), so the
+  phrase sits directly under the logo. `tagline()` returns the one row;
+  `introBlock` pads it with the same indent as the logo.
 - Interactive screens clear the screen once at start and own it; moving
   into a page clears again and renders that page alone. Nothing stacks.
 

@@ -55,9 +55,11 @@ describe('banner', () => {
     expect(logoLines(30)).toHaveLength(1); // compact brand line
   });
 
-  it('tagline stays short and centered', () => {
-    const t = tagline(80);
-    expect(t.replace(/\u001b\[[0-9;]*m/g, '')).toContain('writing');
+  it('tagline is one left-anchored row with both words', () => {
+    const t = tagline();
+    const plain = t.replace(/\u001b\[[0-9;]*m/g, '');
+    expect(plain).toBe('writing, reworked.');
+    expect(t.startsWith(' ')).toBe(false); // pinned left, never centered
   });
 
   it('page header pairs a title with a rule', () => {

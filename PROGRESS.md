@@ -777,3 +777,30 @@ compare the user can actually read and take away.
 | probe: wide 100×30 pairing / narrow 46×30 stacked  | pass, no row exceeds the terminal width                           |
 | probe: per-pane scroll, copy flash, details toggle | pass, no MaxListenersExceededWarning                              |
 | `tsc --noEmit` / `eslint .` / `prettier --check`   | pass                                                              |
+
+## Left-anchored brand tagline (Step 5.14)
+
+### What changed
+
+- **"writing, reworked." is now one row pinned to the left edge.** The
+  tagline that used to float centered one line under the logo now sits on a
+  single left-anchored row — `writing, ` bold, `reworked.` with the single
+  accent pop — flush to the logo's left margin (the identity block's 2-column
+  indent), instead of hanging in the middle of the terminal.
+- **`tagline()` returns one row** — no centering, no width param — and
+  `introBlock` pads it with the same indent as the logo. The identity block
+  keeps its original single-row height on every tier.
+- **Checklist updated to match.** `run.py` invariants for the wordmark and
+  logo tiers again expect the joint row (`"writing, reworked."`); the
+  `text-ui` unit test asserts the exact one-row phrase with no centering
+  lead-in.
+
+### Verified
+
+| Check                                            | Result                                                                        |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `tsc --noEmit` / `eslint .` / `prettier --check` | pass                                                                          |
+| `npm test` (build-first integration)             | see below (full suite re-run)                                                 |
+| `npm run uicheck:record`                         | re-recorded 3 landing snapshots (tagline row now left-anchored)               |
+| `npm run uicheck` (golden + probe)               | pass — snapshots green against the left-anchored tagline row                  |
+| 80×24 / 80×28 / 100×34                           | all tiers keep their original height; tagline sits under the logo's left edge |

@@ -1,5 +1,5 @@
 import { colors } from '../../utils/colors.js';
-import { centerLine, terminalWidth } from '../../utils/text.js';
+import { terminalWidth } from '../../utils/text.js';
 import { theme, sym } from './theme.js';
 
 /**
@@ -465,10 +465,13 @@ export function logoLines(width: number = terminalWidth()): string[] {
   return LOGO_ROWS.map((runs) => runs.map(([role, text]) => LOGO_PAINT[role](text)).join(''));
 }
 
-/** One-line tagline: "writing, reworked." with a single accent pop. */
-export function tagline(width: number = terminalWidth()): string {
-  const line = `${theme.bright('writing, ')}${theme.accent('reworked.')}`;
-  return centerLine(line, width);
+/**
+ * The two-word brand line: "writing, reworked." — a single row pinned to
+ * the brand's left edge (never centered), with `writing,` bold and a
+ * single accent pop on `reworked.`.
+ */
+export function tagline(): string {
+  return `${theme.bright('writing, ')}${theme.accent('reworked.')}`;
 }
 
 /** A dim rule that spans (and adapts to) the terminal width. */
@@ -511,7 +514,7 @@ export function introBlock(width: number = terminalWidth(), opts: IntroOptions =
   for (let i = 0; i < top; i++) lines.push('');
   lines.push(...(compact ? wordmarkLines(width) : logoLines(width)).map(pad));
   lines.push('');
-  lines.push(pad(tagline(width)));
+  lines.push(pad(tagline()));
   lines.push(rule(width));
   return lines;
 }
